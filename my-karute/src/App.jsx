@@ -60,30 +60,38 @@ const S = {
   tag: (color) => ({ display: "inline-block", background: color + "25", color, borderRadius: 20, padding: "2px 10px", fontSize: 12, fontWeight: 600, marginRight: 4, marginBottom: 4 }),
 };
 
-// ── ② 画像ビューア（タップで半画面・ピンチアウト拡大）──────────────────────────
-function ImageViewer({ images, startIndex = 0, onClose }) {
+// ── ② 画像ビューア（タップで半画面・ピンチアウト・上下で記録間移動）──────────
+function ImageViewer({ images, startIndex = 0, onClose, allRecords = null, recordIndex = 0, onRecordChange = null }) {
   const [idx, setIdx] = useState(startIndex);
+  const [recIdx, setRecIdx] = useState(recordIndex);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const lastDist = useRef(null);
   const dragStart = useRef(null);
   const lastOff = useRef({ x: 0, y: 0 });
+  const touchStartY = useRef(null);
+
+  // 現在表示中の画像リスト（上下移動対応）
+  const currentImages = allRecords ? (allRecords[recIdx]?.images || []) : images;
+  const currentRecordLabel = allRecords ? allRecords[recIdx]?.date?.replace(/-/g, "/") : null;
 
   const reset = () => { setScale(1); setOffset({ x: 0, y: 0 }); lastOff.current = { x: 0, y: 0 }; };
 
   const onTouchStart = (e) => {
     if (e.touches.length === 2) {
       lastDist.current = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-    } else if (e.touches.length === 1 && scale > 1) {
-      dragStart.current = { x: e.touches[0].clientX - lastOff.current.x, y: e.touches[0].clientY - lastOff.current.y };
+    } else if (e.touches.length === 1) {
+      touchStartY.current = e.touches[0].clientY;
+      if (scale > 1) {
+        dragStart.current = { x: e.touches[0].clientX - lastOff.current.x, y: e.touches[0].clientY - lastOff.current.y };
+      }
     }
   };
   const onTouchMove = (e) => {
     e.preventDefault();
     if (e.touches.length === 2 && lastDist.current) {
       const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      const ns = Math.min(5, Math.max(1, scale * (dist / lastDist.current)));
-      setScale(ns);
+      setScale(ns => Math.min(5, Math.max(1, ns * (dist / lastDist.current))));
       lastDist.current = dist;
     } else if (e.touches.length === 1 && dragStart.current && scale > 1) {
       const nx = e.touches[0].clientX - dragStart.current.x;
@@ -92,7 +100,19 @@ function ImageViewer({ images, startIndex = 0, onClose }) {
       lastOff.current = { x: nx, y: ny };
     }
   };
-  const onTouchEnd = () => { lastDist.current = null; dragStart.current = null; };
+  const onTouchEnd = (e) => {
+    lastDist.current = null;
+    dragStart.current = null;
+    // 上下スワイプで記録間移動（scale=1のとき）
+    if (scale === 1 && touchStartY.current !== null && allRecords) {
+      const dy = (e.changedTouches[0]?.clientY || 0) - touchStartY.current;
+      if (Math.abs(dy) > 60) {
+        if (dy < 0 && recIdx < allRecords.length - 1) { setRecIdx(r => r + 1); setIdx(0); reset(); }
+        if (dy > 0 && recIdx > 0) { setRecIdx(r => r - 1); setIdx(0); reset(); }
+      }
+    }
+    touchStartY.current = null;
+  };
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.92)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
@@ -100,19 +120,45 @@ function ImageViewer({ images, startIndex = 0, onClose }) {
         {scale > 1 && <button onClick={e => { e.stopPropagation(); reset(); }} style={{ background: "#ffffff30", border: "none", borderRadius: 8, color: "#fff", padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>リセット</button>}
         <button onClick={onClose} style={{ background: "#ffffff20", border: "none", borderRadius: 8, color: "#fff", padding: "6px 10px", cursor: "pointer" }}><Icon d={icons.x} size={18} /></button>
       </div>
-      {images.length > 1 && <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", color: "#ffffff80", fontSize: 12 }}>{idx + 1} / {images.length}</div>}
-      <div style={{ width: "100%", maxWidth: 600, height: "55vh", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", touchAction: "none" }}
-        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onClick={e => e.stopPropagation()}>
-        <img src={images[idx]} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", transform: `scale(${scale}) translate(${offset.x / scale}px, ${offset.y / scale}px)`, userSelect: "none" }} />
-      </div>
-      {images.length > 1 && (
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }} onClick={e => e.stopPropagation()}>
-          <button onClick={() => { setIdx(i => Math.max(0, i - 1)); reset(); }} style={{ ...S.btn(palette.cardBorder), padding: "6px 16px" }} disabled={idx === 0}>◀</button>
-          <button onClick={() => { setIdx(i => Math.min(images.length - 1, i + 1)); reset(); }} style={{ ...S.btn(palette.cardBorder), padding: "6px 16px" }} disabled={idx === images.length - 1}>▶</button>
+
+      {/* 上下移動ヒント・記録ラベル */}
+      {allRecords && allRecords.length > 1 && (
+        <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+          {recIdx > 0 && <div style={{ color: "#ffffff60", fontSize: 11 }}>↑ 前の記録</div>}
+          <div style={{ color: "#ffffffcc", fontSize: 12, fontWeight: 700 }}>{currentRecordLabel} ({recIdx + 1}/{allRecords.length})</div>
+          {recIdx < allRecords.length - 1 && <div style={{ color: "#ffffff60", fontSize: 11 }}>↓ 次の記録</div>}
         </div>
       )}
-      <div style={{ display: "flex", gap: 6, marginTop: 10 }} onClick={e => e.stopPropagation()}>
-        {images.map((img, i) => <img key={i} src={img} alt="" onClick={() => { setIdx(i); reset(); }} style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 6, border: `2px solid ${i === idx ? "#fff" : "transparent"}`, cursor: "pointer" }} />)}
+      {currentImages.length > 1 && <div style={{ position: "absolute", top: allRecords ? 60 : 12, left: "50%", transform: "translateX(-50%)", color: "#ffffff80", fontSize: 12 }}>{idx + 1} / {currentImages.length}</div>}
+
+      <div style={{ width: "100%", maxWidth: 600, height: "55vh", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", touchAction: "none" }}
+        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onClick={e => e.stopPropagation()}>
+        {currentImages.length > 0
+          ? <img src={currentImages[idx]} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", transform: `scale(${scale}) translate(${offset.x / scale}px, ${offset.y / scale}px)`, userSelect: "none" }} />
+          : <div style={{ color: "#ffffff50", fontSize: 14 }}>この記録に画像はありません</div>
+        }
+      </div>
+
+      {/* 上下ボタン（記録間） */}
+      {allRecords && allRecords.length > 1 && (
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }} onClick={e => e.stopPropagation()}>
+          <button onClick={() => { setRecIdx(r => Math.max(0, r - 1)); setIdx(0); reset(); }} disabled={recIdx === 0}
+            style={{ ...S.btn(palette.cardBorder), padding: "5px 14px", opacity: recIdx === 0 ? 0.3 : 1 }}>↑ 前</button>
+          <button onClick={() => { setRecIdx(r => Math.min(allRecords.length - 1, r + 1)); setIdx(0); reset(); }} disabled={recIdx === allRecords.length - 1}
+            style={{ ...S.btn(palette.cardBorder), padding: "5px 14px", opacity: recIdx === allRecords.length - 1 ? 0.3 : 1 }}>↓ 次</button>
+        </div>
+      )}
+
+      {/* 左右ボタン（同一記録内の画像） */}
+      {currentImages.length > 1 && (
+        <div style={{ display: "flex", gap: 8, marginTop: 6 }} onClick={e => e.stopPropagation()}>
+          <button onClick={() => { setIdx(i => Math.max(0, i - 1)); reset(); }} style={{ ...S.btn(palette.cardBorder), padding: "5px 14px" }} disabled={idx === 0}>◀</button>
+          <button onClick={() => { setIdx(i => Math.min(currentImages.length - 1, i + 1)); reset(); }} style={{ ...S.btn(palette.cardBorder), padding: "5px 14px" }} disabled={idx === currentImages.length - 1}>▶</button>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 6, marginTop: 8 }} onClick={e => e.stopPropagation()}>
+        {currentImages.map((img, i) => <img key={i} src={img} alt="" onClick={() => { setIdx(i); reset(); }} style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 6, border: `2px solid ${i === idx ? "#fff" : "transparent"}`, cursor: "pointer" }} />)}
       </div>
     </div>
   );
@@ -138,10 +184,18 @@ function ImageGrid({ images, onRemove, maxImages = 4 }) {
 
 function ImageUpload({ onUpload, label = "写真を追加", disabled = false }) {
   const ref = useRef();
+  const handleChange = (e) => {
+    const files = Array.from(e.target.files);
+    files.forEach(f => {
+      const r = new FileReader();
+      r.onload = ev => onUpload(ev.target.result);
+      r.readAsDataURL(f);
+    });
+    e.target.value = ""; // reset so same file can be re-selected
+  };
   return (
     <>
-      <input type="file" accept="image/*" ref={ref} style={{ display: "none" }}
-        onChange={e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => onUpload(ev.target.result); r.readAsDataURL(f); }} />
+      <input type="file" accept="image/*" multiple ref={ref} style={{ display: "none" }} onChange={handleChange} />
       <button style={{ ...S.btn(disabled ? palette.cardBorder : palette.accent2), fontSize: 12, padding: "6px 12px", opacity: disabled ? 0.5 : 1 }} onClick={() => !disabled && ref.current.click()} disabled={disabled}>
         <Icon d={icons.camera} size={14} /> {label}
       </button>
@@ -268,20 +322,32 @@ function RecordForm({ form, setForm, onSave, onCancel, saveLabel = "保存" }) {
   );
 }
 
-// 横スライドで複数記録を比較するコンポーネント
 function RecordsSlider({ items, onEdit, onDelete }) {
   const c = palette.accent2;
-  const [viewerImages, setViewerImages] = useState(null); // { images, idx }
+  // 上下スライドビューア用: { recordIndex, imgIndex }
+  const [viewer, setViewer] = useState(null);
 
   if (items.length === 0) return <div style={{ textAlign: "center", color: palette.textSub, padding: 40 }}>検査記録がまだありません</div>;
 
+  // 画像を持つ記録だけ抽出（上下スライド用）
+  const recordsWithImages = items.map((item, idx) => ({ ...item, _origIdx: idx })).filter(item => item.images && item.images.length > 0);
+
   return (
     <>
-      {viewerImages && <ImageViewer images={viewerImages.images} startIndex={viewerImages.idx} onClose={() => setViewerImages(null)} />}
+      {viewer !== null && (
+        <ImageViewer
+          images={recordsWithImages[viewer]?.images || []}
+          startIndex={0}
+          onClose={() => setViewer(null)}
+          allRecords={recordsWithImages}
+          recordIndex={viewer}
+          onRecordChange={setViewer}
+        />
+      )}
 
       {/* 横スライドエリア */}
       <div style={{ overflowX: "auto", display: "flex", gap: 10, paddingBottom: 8, scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}>
-        {items.map(item => (
+        {items.map((item, itemIdx) => (
           <div key={item.id} style={{
             minWidth: "85vw", maxWidth: 340,
             background: palette.card, border: `1px solid ${palette.cardBorder}`,
@@ -307,13 +373,17 @@ function RecordsSlider({ items, onEdit, onDelete }) {
             {/* タイトル */}
             {item.title && <div style={{ fontWeight: 700, color: palette.text, fontSize: 14 }}>{item.title}</div>}
 
-            {/* 画像（横スクロール） */}
+            {/* 画像（タップでビューア） */}
             {item.images && item.images.length > 0 && (
               <div style={{ overflowX: "auto", display: "flex", gap: 6 }}>
-                {item.images.map((img, i) => (
-                  <img key={i} src={img} alt="" onClick={() => setViewerImages({ images: item.images, idx: i })}
-                    style={{ width: 90, height: 90, objectFit: "cover", borderRadius: 8, flexShrink: 0, cursor: "pointer", border: `1px solid ${palette.cardBorder}` }} />
-                ))}
+                {item.images.map((img, i) => {
+                  const rwIdx = recordsWithImages.findIndex(r => r.id === item.id);
+                  return (
+                    <img key={i} src={img} alt=""
+                      onClick={() => setViewer(rwIdx >= 0 ? rwIdx : 0)}
+                      style={{ width: 90, height: 90, objectFit: "cover", borderRadius: 8, flexShrink: 0, cursor: "pointer", border: `1px solid ${palette.cardBorder}` }} />
+                  );
+                })}
               </div>
             )}
 
@@ -323,10 +393,9 @@ function RecordsSlider({ items, onEdit, onDelete }) {
         ))}
       </div>
 
-      {/* スライドヒント */}
       {items.length > 1 && (
         <div style={{ textAlign: "center", color: palette.textSub, fontSize: 11, marginTop: 4 }}>
-          ← スライドして比較 ({items.length}件) →
+          ← スライドして比較 ({items.length}件) ／ 画像タップ→上下で記録間移動
         </div>
       )}
     </>
@@ -339,7 +408,13 @@ function RecordsPage() {
   const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState({ date: "", type: "採血", title: "", memo: "", images: [] });
   const [editForm, setEditForm] = useState({});
-  useEffect(() => { save(KEYS.records, items); }, [items]);
+
+  // ★ バグ修正: itemsが変わったときだけsave（無限ループ防止）
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return; }
+    save(KEYS.records, items);
+  }, [items]);
 
   const add = () => {
     if (!form.date) return;
@@ -377,45 +452,66 @@ function RecordsPage() {
   );
 }
 
-// ── ⑥ 東洋医学（画像追加対応）────────────────────────────────────────────────
+// ── 東洋医学（編集対応・複数枚同時選択）──────────────────────────────────────
 function OrientalPage() {
   const [items, setItems] = useState(() => load(KEYS.oriental) || []);
   const [adding, setAdding] = useState(false);
+  const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ date: "", practitioner: "", tongue: "", pulse: "", symptoms: "", treatment: "", memo: "", images: [] });
-  useEffect(() => { save(KEYS.oriental, items); }, [items]);
-  const add = () => { if (!form.date) return; setItems(p => [{ ...form, id: Date.now() }, ...p].sort((a, b) => b.date.localeCompare(a.date))); setForm({ date: "", practitioner: "", tongue: "", pulse: "", symptoms: "", treatment: "", memo: "", images: [] }); setAdding(false); };
+  const [editForm, setEditForm] = useState({});
+  const isFirst = useRef(true);
+  useEffect(() => { if (isFirst.current) { isFirst.current = false; return; } save(KEYS.oriental, items); }, [items]);
+
   const fields = [{ key: "tongue", label: "舌診", ph: "色・形・苔の状態" }, { key: "pulse", label: "脈診", ph: "脈の状態" }, { key: "symptoms", label: "主訴・証", ph: "気血水・五行のバランスなど" }, { key: "treatment", label: "治療内容", ph: "ツボ、施術内容" }, { key: "memo", label: "メモ", ph: "体調変化など" }];
+  const c = palette.accent3;
+  const emptyForm = { date: "", practitioner: "", tongue: "", pulse: "", symptoms: "", treatment: "", memo: "", images: [] };
+
+  const add = () => { if (!form.date) return; setItems(p => [{ ...form, id: Date.now() }, ...p].sort((a, b) => b.date.localeCompare(a.date))); setForm(emptyForm); setAdding(false); };
+  const startEdit = (item) => { setEditId(item.id); setEditForm({ ...item }); setAdding(false); };
+  const saveEdit = () => { setItems(p => p.map(x => x.id === editId ? { ...editForm } : x).sort((a, b) => b.date.localeCompare(a.date))); setEditId(null); };
+
+  const FormBlock = ({ f, setF, onSave, onCancel, label }) => (
+    <div style={{ ...S.card, borderColor: c + "60", marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div><div style={S.label}>日付 *</div><input type="date" style={S.input} value={f.date} onChange={e => setF(p => ({ ...p, date: e.target.value }))} /></div>
+        <div><div style={S.label}>施術者・病院</div><input style={S.input} placeholder="○○鍼灸院" value={f.practitioner} onChange={e => setF(p => ({ ...p, practitioner: e.target.value }))} /></div>
+      </div>
+      {fields.map(fd => <div key={fd.key} style={{ marginBottom: 10 }}><div style={S.label}>{fd.label}</div><textarea style={{ ...S.textarea, minHeight: 50 }} placeholder={fd.ph} value={f[fd.key]} onChange={e => setF(p => ({ ...p, [fd.key]: e.target.value }))} /></div>)}
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <div style={{ ...S.label, marginBottom: 0 }}>写真（最大4枚・複数同時選択可）</div>
+          <ImageUpload disabled={f.images.length >= 4} onUpload={img => setF(p => p.images.length < 4 ? { ...p, images: [...p.images, img] } : p)} label="追加" />
+        </div>
+        <ImageGrid images={f.images} onRemove={i => setF(p => ({ ...p, images: p.images.filter((_, j) => j !== i) }))} />
+      </div>
+      <div style={{ display: "flex", gap: 8 }}><button style={S.btn(c)} onClick={onSave}>{label}</button><button style={S.btn(palette.cardBorder)} onClick={onCancel}>キャンセル</button></div>
+    </div>
+  );
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div><div style={{ fontSize: 18, fontWeight: 700, color: palette.text }}>東洋医学記録</div><div style={{ fontSize: 12, color: palette.textSub }}>舌診・脈診・治療の時系列</div></div>
-        <button style={S.btn(palette.accent3)} onClick={() => setAdding(!adding)}><Icon d={icons.plus} size={14} /> 追加</button>
+        <button style={S.btn(c)} onClick={() => { setAdding(!adding); setEditId(null); }}><Icon d={icons.plus} size={14} /> 追加</button>
       </div>
-      {adding && (
-        <div style={{ ...S.card, borderColor: palette.accent3 + "60", marginBottom: 16 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-            <div><div style={S.label}>日付 *</div><input type="date" style={S.input} value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} /></div>
-            <div><div style={S.label}>施術者・病院</div><input style={S.input} placeholder="○○鍼灸院" value={form.practitioner} onChange={e => setForm(p => ({ ...p, practitioner: e.target.value }))} /></div>
-          </div>
-          {fields.map(f => <div key={f.key} style={{ marginBottom: 10 }}><div style={S.label}>{f.label}</div><textarea style={{ ...S.textarea, minHeight: 60 }} placeholder={f.ph} value={form[f.key]} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))} /></div>)}
-          <div style={{ marginBottom: 10 }}>
-            <div style={S.label}>写真（最大4枚）</div>
-            <ImageUpload disabled={form.images.length >= 4} onUpload={img => setForm(p => ({ ...p, images: [...p.images, img] }))} />
-            <ImageGrid images={form.images} onRemove={i => setForm(p => ({ ...p, images: p.images.filter((_, j) => j !== i) }))} />
-          </div>
-          <div style={{ display: "flex", gap: 8 }}><button style={S.btn(palette.accent3)} onClick={add}>保存</button><button style={S.btn(palette.cardBorder)} onClick={() => setAdding(false)}>キャンセル</button></div>
-        </div>
-      )}
+      {adding && <FormBlock f={form} setF={setForm} onSave={add} onCancel={() => setAdding(false)} label="保存" />}
+      {editId && <div style={{ marginBottom: 8 }}><div style={{ fontSize: 12, color: c, fontWeight: 700, marginBottom: 4 }}>✏️ 編集中</div><FormBlock f={editForm} setF={setEditForm} onSave={saveEdit} onCancel={() => setEditId(null)} label="更新" /></div>}
       {items.length === 0 && !adding && <div style={{ textAlign: "center", color: palette.textSub, padding: 40 }}>東洋医学の記録がまだありません</div>}
       {items.map(item => (
         <div key={item.id} style={S.card}>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}><span style={{ color: palette.accent3, fontSize: 12, fontWeight: 700 }}>{item.date.replace(/-/g, "/")}</span>{item.practitioner && <span style={S.tag(palette.accent3)}>{item.practitioner}</span>}</div>
-              {[["舌診",item.tongue],["脈診",item.pulse],["証",item.symptoms],["治療",item.treatment],["メモ",item.memo]].filter(x=>x[1]).map(x => <div key={x[0]} style={{ marginBottom: 6 }}><span style={{ color: palette.accent3, fontSize: 11, fontWeight: 700 }}>{x[0]} </span><span style={{ color: palette.textSub, fontSize: 13 }}>{x[1]}</span></div>)}
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+                <span style={{ color: c, fontSize: 12, fontWeight: 700 }}>{item.date.replace(/-/g, "/")}</span>
+                {item.practitioner && <span style={S.tag(c)}>{item.practitioner}</span>}
+              </div>
+              {[["舌診",item.tongue],["脈診",item.pulse],["証",item.symptoms],["治療",item.treatment],["メモ",item.memo]].filter(x=>x[1]).map(x => <div key={x[0]} style={{ marginBottom: 6 }}><span style={{ color: c, fontSize: 11, fontWeight: 700 }}>{x[0]} </span><span style={{ color: palette.textSub, fontSize: 13 }}>{x[1]}</span></div>)}
               {item.images && item.images.length > 0 && <ImageGrid images={item.images} />}
             </div>
-            <button onClick={() => setItems(p => p.filter(x => x.id !== item.id))} style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent4 }}><Icon d={icons.trash} size={16} /></button>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <button onClick={() => startEdit(item)} style={{ background: "none", border: `1px solid ${palette.cardBorder}`, borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: palette.textSub }}><Icon d={icons.edit} size={13} /></button>
+              <button onClick={() => setItems(p => p.filter(x => x.id !== item.id))} style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent4 }}><Icon d={icons.trash} size={15} /></button>
+            </div>
           </div>
         </div>
       ))}
@@ -423,49 +519,99 @@ function OrientalPage() {
   );
 }
 
-// ── 姿勢記録 ────────────────────────────────────────────────────────────────────
+// ── 姿勢記録（編集対応・大きい画像・複数同時選択）──────────────────────────
 function PosturePage() {
   const [items, setItems] = useState(() => load(KEYS.posture) || []);
   const [adding, setAdding] = useState(false);
+  const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ date: "", place: "", memo: "", images: [] });
-  const [expanded, setExpanded] = useState(null);
-  useEffect(() => { save(KEYS.posture, items); }, [items]);
-  const add = () => { if (!form.date) return; setItems(p => [{ ...form, id: Date.now() }, ...p].sort((a, b) => b.date.localeCompare(a.date))); setForm({ date: "", place: "", memo: "", images: [] }); setAdding(false); };
+  const [editForm, setEditForm] = useState({});
+  const [viewer, setViewer] = useState(null); // { recIdx, imgIdx }
+  const isFirst = useRef(true);
+  useEffect(() => { if (isFirst.current) { isFirst.current = false; return; } save(KEYS.posture, items); }, [items]);
+
+  const c = palette.accent4;
+  const emptyForm = { date: "", place: "", memo: "", images: [] };
+  const add = () => { if (!form.date) return; setItems(p => [{ ...form, id: Date.now() }, ...p].sort((a, b) => b.date.localeCompare(a.date))); setForm(emptyForm); setAdding(false); };
+  const startEdit = (item) => { setEditId(item.id); setEditForm({ ...item }); setAdding(false); };
+  const saveEdit = () => { setItems(p => p.map(x => x.id === editId ? { ...editForm } : x).sort((a, b) => b.date.localeCompare(a.date))); setEditId(null); };
+
+  const recordsWithImages = items.filter(x => x.images && x.images.length > 0);
+
+  const FormBlock = ({ f, setF, onSave, onCancel, label }) => (
+    <div style={{ ...S.card, borderColor: c + "60", marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div><div style={S.label}>日付 *</div><input type="date" style={S.input} value={f.date} onChange={e => setF(p => ({ ...p, date: e.target.value }))} /></div>
+        <div><div style={S.label}>場所</div><input style={S.input} placeholder="○○整骨院" value={f.place} onChange={e => setF(p => ({ ...p, place: e.target.value }))} /></div>
+      </div>
+      <div style={{ marginBottom: 10 }}><div style={S.label}>メモ</div><textarea style={{ ...S.textarea, minHeight: 50 }} value={f.memo} onChange={e => setF(p => ({ ...p, memo: e.target.value }))} /></div>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <div style={{ ...S.label, marginBottom: 0 }}>姿勢写真（最大4枚・複数同時選択可）</div>
+          <ImageUpload disabled={f.images.length >= 4} onUpload={img => setF(p => p.images.length < 4 ? { ...p, images: [...p.images, img] } : p)} label="追加" />
+        </div>
+        {/* 大きい画像プレビュー */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {f.images.map((img, i) => (
+            <div key={i} style={{ position: "relative" }}>
+              <img src={img} alt="" style={{ width: 100, height: 130, objectFit: "cover", borderRadius: 8 }} />
+              <button onClick={() => setF(p => ({ ...p, images: p.images.filter((_, j) => j !== i) }))} style={{ position: "absolute", top: -4, right: -4, background: c, border: "none", borderRadius: "50%", width: 18, height: 18, cursor: "pointer", color: "#fff", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8 }}><button style={S.btn(c)} onClick={onSave}>{label}</button><button style={S.btn(palette.cardBorder)} onClick={onCancel}>キャンセル</button></div>
+    </div>
+  );
+
   return (
     <div>
+      {viewer !== null && (
+        <ImageViewer
+          images={recordsWithImages[viewer]?.images || []}
+          startIndex={0}
+          onClose={() => setViewer(null)}
+          allRecords={recordsWithImages}
+          recordIndex={viewer}
+        />
+      )}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div><div style={{ fontSize: 18, fontWeight: 700, color: palette.text }}>姿勢記録</div><div style={{ fontSize: 12, color: palette.textSub }}>体操教室・整骨院での姿勢写真</div></div>
-        <button style={S.btn(palette.accent4)} onClick={() => setAdding(!adding)}><Icon d={icons.plus} size={14} /> 追加</button>
+        <button style={S.btn(c)} onClick={() => { setAdding(!adding); setEditId(null); }}><Icon d={icons.plus} size={14} /> 追加</button>
       </div>
-      {adding && (
-        <div style={{ ...S.card, borderColor: palette.accent4 + "60", marginBottom: 16 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-            <div><div style={S.label}>日付 *</div><input type="date" style={S.input} value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} /></div>
-            <div><div style={S.label}>場所</div><input style={S.input} placeholder="○○整骨院" value={form.place} onChange={e => setForm(p => ({ ...p, place: e.target.value }))} /></div>
-          </div>
-          <div style={{ marginBottom: 10 }}><div style={S.label}>メモ</div><textarea style={{ ...S.textarea, minHeight: 60 }} value={form.memo} onChange={e => setForm(p => ({ ...p, memo: e.target.value }))} /></div>
-          <div style={{ marginBottom: 10 }}>
-            <div style={S.label}>姿勢写真（最大4枚）</div>
-            <ImageUpload disabled={form.images.length >= 4} onUpload={img => setForm(p => ({ ...p, images: [...p.images, img] }))} />
-            <ImageGrid images={form.images} onRemove={i => setForm(p => ({ ...p, images: p.images.filter((_, j) => j !== i) }))} />
-          </div>
-          <div style={{ display: "flex", gap: 8 }}><button style={S.btn(palette.accent4)} onClick={add}>保存</button><button style={S.btn(palette.cardBorder)} onClick={() => setAdding(false)}>キャンセル</button></div>
-        </div>
-      )}
+      {adding && <FormBlock f={form} setF={setForm} onSave={add} onCancel={() => setAdding(false)} label="保存" />}
+      {editId && <div style={{ marginBottom: 8 }}><div style={{ fontSize: 12, color: c, fontWeight: 700, marginBottom: 4 }}>✏️ 編集中</div><FormBlock f={editForm} setF={setEditForm} onSave={saveEdit} onCancel={() => setEditId(null)} label="更新" /></div>}
       {items.length === 0 && !adding && <div style={{ textAlign: "center", color: palette.textSub, padding: 40 }}>姿勢記録がまだありません</div>}
-      {items.map(item => (
-        <div key={item.id} style={{ ...S.card, cursor: "pointer" }} onClick={() => setExpanded(expanded === item.id ? null : item.id)}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span style={{ color: palette.accent4, fontWeight: 700, fontSize: 14 }}>{item.date.replace(/-/g, "/")}</span>{item.place && <span style={S.tag(palette.accent4)}>{item.place}</span>}</div>
-              {item.memo && <div style={{ color: palette.textSub, fontSize: 12, marginTop: 4 }}>{item.memo}</div>}
-              <div style={{ color: palette.textSub, fontSize: 11, marginTop: 4 }}>📷 {item.images ? item.images.length : 0}枚</div>
+      {items.map(item => {
+        const rwIdx = recordsWithImages.findIndex(r => r.id === item.id);
+        return (
+          <div key={item.id} style={S.card}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+              <div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ color: c, fontWeight: 700, fontSize: 13 }}>{item.date.replace(/-/g, "/")}</span>
+                  {item.place && <span style={S.tag(c)}>{item.place}</span>}
+                </div>
+                {item.memo && <div style={{ color: palette.textSub, fontSize: 12, marginTop: 4 }}>{item.memo}</div>}
+              </div>
+              <div style={{ display: "flex", gap: 4 }}>
+                <button onClick={() => startEdit(item)} style={{ background: "none", border: `1px solid ${palette.cardBorder}`, borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: palette.textSub }}><Icon d={icons.edit} size={13} /></button>
+                <button onClick={() => setItems(p => p.filter(x => x.id !== item.id))} style={{ background: "none", border: "none", cursor: "pointer", color: c }}><Icon d={icons.trash} size={15} /></button>
+              </div>
             </div>
-            <button onClick={e => { e.stopPropagation(); setItems(p => p.filter(x => x.id !== item.id)); }} style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent4 }}><Icon d={icons.trash} size={16} /></button>
+            {/* 大きい画像表示 */}
+            {item.images && item.images.length > 0 && (
+              <div style={{ display: "flex", gap: 8, overflowX: "auto" }}>
+                {item.images.map((img, i) => (
+                  <img key={i} src={img} alt=""
+                    onClick={() => rwIdx >= 0 && setViewer(rwIdx)}
+                    style={{ width: 110, height: 140, objectFit: "cover", borderRadius: 8, flexShrink: 0, cursor: "pointer", border: `1px solid ${palette.cardBorder}` }} />
+                ))}
+              </div>
+            )}
           </div>
-          {expanded === item.id && item.images && item.images.length > 0 && <div onClick={e => e.stopPropagation()} style={{ marginTop: 12 }}><ImageGrid images={item.images} /></div>}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
