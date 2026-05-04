@@ -567,15 +567,36 @@ function TimelinePage({ jumpDate, onClearJump, onSwitchTab }) {
   const preview = item => item.title || item.name || item.type || (item.text ? item.text.slice(0, 28) + (item.text.length > 28 ? "…" : "") : "") || item.memo?.slice(0, 28) || "記録あり";
 
   const [calSel, setCalSel] = useState(null);
+  const [calOpen, setCalOpen] = useState(false);
   const handleCalSel = ds => {
     setCalSel(ds);
+    setCalOpen(false);
     const nearest = allDates.length ? allDates.reduce((a, b) => Math.abs(new Date(b) - new Date(ds)) < Math.abs(new Date(a) - new Date(ds)) ? b : a) : null;
     if (nearest) { setOpenDate(nearest); setTimeout(() => dayRefs.current[nearest]?.scrollIntoView({ behavior: "smooth", block: "start" }), 80); }
   };
 
   return (
     <div>
-      <div style={{ marginBottom: 16 }}><MiniCalendar markedDates={markedDates} selectedDate={calSel} onSelectDate={handleCalSel} /></div>
+      {/* カレンダーボタン */}
+      <button onClick={() => setCalOpen(o => !o)} style={{
+        width: "100%", marginBottom: 12,
+        background: calOpen ? tlColor + "18" : palette.card,
+        border: `1px solid ${calOpen ? tlColor + "60" : palette.cardBorder}`,
+        borderRadius: 10, padding: "10px 16px", cursor: "pointer",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Icon d={icons.calendar} size={15} color={tlColor} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: tlColor }}>カレンダー</span>
+          {calSel && <span style={{ fontSize: 11, color: palette.textSub }}>{calSel.replace(/-/g, "/")}</span>}
+        </div>
+        <div style={{ color: tlColor, transform: calOpen ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>
+          <Icon d={icons.chevRight} size={14} color={tlColor} />
+        </div>
+      </button>
+      {calOpen && (
+        <div style={{ marginBottom: 16 }}><MiniCalendar markedDates={markedDates} selectedDate={calSel} onSelectDate={handleCalSel} /></div>
+      )}
       <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <div style={{ background: palette.card, border: `1px solid ${palette.cardBorder}`, borderRadius: 10, padding: "8px 14px" }}>
           <div style={{ fontSize: 10, color: palette.textSub }}>記録のある日</div>
