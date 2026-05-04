@@ -861,11 +861,82 @@ function TimelinePage({ jumpDate, onClearJump, onSwitchTab }) {
   );
 }
 
+// ── バックアップ・復元 ──────────────────────────────────────────────────────────
+function BackupPanel({ open, onClose }) {
+  const [msg, setMsg] = useState("");
+  const fileRef = useRef();
+
+  const backup = () => {
+    const data = {};
+    Object.entries(KEYS).forEach(([k, v]) => {
+      const raw = localStorage.getItem(v);
+      if (raw) data[k] = JSON.parse(raw);
+    });
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `my-karute-backup-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setMsg("✅ バックアップファイルをダウンロードしました");
+  };
+
+  const restore = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        Object.entries(KEYS).forEach(([k, v]) => {
+          if (data[k] !== undefined) localStorage.setItem(v, JSON.stringify(data[k]));
+        });
+        setMsg("✅ 復元しました。ページをリロードしてください。");
+        setTimeout(() => window.location.reload(), 1500);
+      } catch {
+        setMsg("❌ ファイルが正しくありません");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  if (!open) return null;
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "flex-start", justifyContent: "center" }} onClick={onClose}>
+      <div style={{ background: palette.card, border: `1px solid ${palette.cardBorder}`, borderRadius: "0 0 20px 20px", maxWidth: 500, width: "100%", padding: 20, boxShadow: "0 8px 40px rgba(0,0,0,0.4)" }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: palette.text, marginBottom: 6 }}>💾 データのバックアップ・復元</div>
+        <div style={{ fontSize: 12, color: palette.textSub, marginBottom: 16, lineHeight: 1.6 }}>
+          定期的にバックアップを取っておくと、データが消えた際に復元できます。
+        </div>
+
+        <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+          <button onClick={backup} style={{ ...S.btn(palette.accent2), flex: 1, justifyContent: "center", padding: "10px 16px" }}>
+            📥 バックアップを保存
+          </button>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <input type="file" accept=".json" ref={fileRef} style={{ display: "none" }} onChange={restore} />
+          <button onClick={() => fileRef.current.click()} style={{ ...S.btn(palette.accent3), width: "100%", justifyContent: "center", padding: "10px 16px" }}>
+            📤 バックアップから復元
+          </button>
+        </div>
+
+        {msg && <div style={{ fontSize: 12, color: palette.accent5, padding: "8px 12px", background: palette.accent5 + "15", borderRadius: 8, marginBottom: 10 }}>{msg}</div>}
+
+        <button onClick={onClose} style={{ ...S.btn(palette.cardBorder), width: "100%", justifyContent: "center" }}>閉じる</button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main App ────────────────────────────────────────────────────────────────────
 export default function App() {
   const [active, setActive] = useState("timeline");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [calOpen, setCalOpen] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
   const [jumpDate, setJumpDate] = useState(null);
   const [allMarkedDates, setAllMarkedDates] = useState(new Set());
 
@@ -883,18 +954,24 @@ export default function App() {
     <div style={{ background: palette.bg, minHeight: "100vh", color: palette.text, fontFamily: "'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif" }}>
       <div style={{ background: palette.tabBg, borderBottom: `1px solid ${palette.cardBorder}`, padding: "10px 16px 0", position: "sticky", top: 0, zIndex: 100 }}>
 
-        {/* ① ヘッダー */}
+        {/* ヘッダー */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div style={{ width: 28, height: 28, borderRadius: 7, background: `linear-gradient(135deg,${palette.accent2},${palette.accent1})`, display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 14 }}>🏥</span></div>
             <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: 1 }}>マイカルテ</div>
           </div>
           <div style={{ display: "flex", gap: 6 }}>
-            {/* ① カレンダーボタン（既往歴の左） */}
+            {/* バックアップボタン */}
+            <button onClick={() => setBackupOpen(true)} style={{ background: "transparent", border: `1px solid ${palette.cardBorder}`, borderRadius: 8, padding: "5px 8px", display: "flex", alignItems: "center", cursor: "pointer" }}
+              title="バックアップ・復元">
+              <span style={{ fontSize: 14 }}>💾</span>
+            </button>
+            {/* カレンダーボタン */}
             <button onClick={() => setCalOpen(o => !o)} style={{ background: calOpen ? "#f0c06020" : "transparent", border: `1px solid ${calOpen ? "#f0c06060" : palette.cardBorder}`, borderRadius: 8, padding: "5px 10px", display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
               <Icon d={icons.calendar} size={14} color="#f0c060" />
               <span style={{ fontSize: 11, fontWeight: 700, color: "#f0c060" }}>カレンダー</span>
             </button>
+            {/* 既往歴ボタン */}
             <button onClick={() => setHistoryOpen(true)} style={{ background: `linear-gradient(135deg,${hp.accent},${hp.accentSub})`, border: "none", borderRadius: 8, padding: "5px 10px", display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
               <span style={{ fontSize: 11 }}>📋</span>
               <span style={{ fontSize: 11, fontWeight: 800, color: "#1a1208" }}>既往歴</span>
@@ -902,7 +979,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* ① カレンダー展開（タブの上） */}
+        {/* カレンダー展開（タブの上） */}
         {calOpen && (
           <div style={{ paddingBottom: 10 }}>
             <MiniCalendar markedDates={allMarkedDates} selectedDate={jumpDate} onSelectDate={handleHeaderCalSel} />
@@ -920,6 +997,7 @@ export default function App() {
       </div>
 
       <HistoryPanel open={historyOpen} onClose={() => setHistoryOpen(false)} />
+      <BackupPanel open={backupOpen} onClose={() => setBackupOpen(false)} />
 
       <div style={{ padding: 16, maxWidth: 600, margin: "0 auto" }}>
         <div style={{ height: 3, background: `linear-gradient(90deg,${activeTab.color},transparent)`, borderRadius: 2, marginBottom: 16 }} />
@@ -934,3 +1012,4 @@ export default function App() {
     </div>
   );
 }
+
