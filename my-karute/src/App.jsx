@@ -237,49 +237,142 @@ function HistoryPanel({ open, onClose }) {
   );
 }
 
-// ── 検査記録 ────────────────────────────────────────────────────────────────────
+// ── 検査記録（編集・コンパクト・横スライド比較）──────────────────────────────
+function RecordForm({ form, setForm, onSave, onCancel, saveLabel = "保存" }) {
+  const c = palette.accent2;
+  return (
+    <div style={{ ...S.card, borderColor: c + "60", marginBottom: 16 }}>
+      {/* 1行目: 日付・種別・タイトル横並び */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+        <div><div style={S.label}>日付 *</div><input type="date" style={S.input} value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} /></div>
+        <div><div style={S.label}>種別</div>
+          <select style={S.input} value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}>
+            {["採血","レントゲン","MRI/CT","超音波","心電図","尿検査","その他"].map(t => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+      </div>
+      <div style={{ marginBottom: 8 }}><input style={S.input} placeholder="タイトル（例：一般健康診断）" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} /></div>
+      <div style={{ marginBottom: 8 }}><textarea style={{ ...S.textarea, minHeight: 60 }} placeholder="結果・メモ" value={form.memo} onChange={e => setForm(p => ({ ...p, memo: e.target.value }))} /></div>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <div style={{ ...S.label, marginBottom: 0 }}>写真（最大4枚）</div>
+          <ImageUpload disabled={form.images.length >= 4} onUpload={img => setForm(p => ({ ...p, images: [...p.images, img] }))} label="追加" />
+        </div>
+        <ImageGrid images={form.images} onRemove={i => setForm(p => ({ ...p, images: p.images.filter((_, j) => j !== i) }))} />
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button style={S.btn(c)} onClick={onSave}>{saveLabel}</button>
+        <button style={S.btn(palette.cardBorder)} onClick={onCancel}>キャンセル</button>
+      </div>
+    </div>
+  );
+}
+
+// 横スライドで複数記録を比較するコンポーネント
+function RecordsSlider({ items, onEdit, onDelete }) {
+  const c = palette.accent2;
+  const [viewerImages, setViewerImages] = useState(null); // { images, idx }
+
+  if (items.length === 0) return <div style={{ textAlign: "center", color: palette.textSub, padding: 40 }}>検査記録がまだありません</div>;
+
+  return (
+    <>
+      {viewerImages && <ImageViewer images={viewerImages.images} startIndex={viewerImages.idx} onClose={() => setViewerImages(null)} />}
+
+      {/* 横スライドエリア */}
+      <div style={{ overflowX: "auto", display: "flex", gap: 10, paddingBottom: 8, scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}>
+        {items.map(item => (
+          <div key={item.id} style={{
+            minWidth: "85vw", maxWidth: 340,
+            background: palette.card, border: `1px solid ${palette.cardBorder}`,
+            borderRadius: 12, padding: 12, flexShrink: 0,
+            scrollSnapAlign: "start", display: "flex", flexDirection: "column", gap: 6,
+          }}>
+            {/* ヘッダー行 */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <span style={{ color: c, fontSize: 12, fontWeight: 700 }}>{item.date.replace(/-/g, "/")}</span>
+                <span style={S.tag(c)}>{item.type}</span>
+              </div>
+              <div style={{ display: "flex", gap: 4 }}>
+                <button onClick={() => onEdit(item)} style={{ background: "none", border: `1px solid ${palette.cardBorder}`, borderRadius: 6, padding: "3px 8px", cursor: "pointer", color: palette.textSub, fontSize: 11, display: "flex", alignItems: "center", gap: 3 }}>
+                  <Icon d={icons.edit} size={11} /> 編集
+                </button>
+                <button onClick={() => onDelete(item.id)} style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent4, padding: 4 }}>
+                  <Icon d={icons.trash} size={14} />
+                </button>
+              </div>
+            </div>
+
+            {/* タイトル */}
+            {item.title && <div style={{ fontWeight: 700, color: palette.text, fontSize: 14 }}>{item.title}</div>}
+
+            {/* 画像（横スクロール） */}
+            {item.images && item.images.length > 0 && (
+              <div style={{ overflowX: "auto", display: "flex", gap: 6 }}>
+                {item.images.map((img, i) => (
+                  <img key={i} src={img} alt="" onClick={() => setViewerImages({ images: item.images, idx: i })}
+                    style={{ width: 90, height: 90, objectFit: "cover", borderRadius: 8, flexShrink: 0, cursor: "pointer", border: `1px solid ${palette.cardBorder}` }} />
+                ))}
+              </div>
+            )}
+
+            {/* メモ */}
+            {item.memo && <div style={{ color: palette.textSub, fontSize: 12, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{item.memo}</div>}
+          </div>
+        ))}
+      </div>
+
+      {/* スライドヒント */}
+      {items.length > 1 && (
+        <div style={{ textAlign: "center", color: palette.textSub, fontSize: 11, marginTop: 4 }}>
+          ← スライドして比較 ({items.length}件) →
+        </div>
+      )}
+    </>
+  );
+}
+
 function RecordsPage() {
   const [items, setItems] = useState(() => load(KEYS.records) || []);
   const [adding, setAdding] = useState(false);
+  const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState({ date: "", type: "採血", title: "", memo: "", images: [] });
+  const [editForm, setEditForm] = useState({});
   useEffect(() => { save(KEYS.records, items); }, [items]);
-  const add = () => { if (!form.date) return; setItems(p => [{ ...form, id: Date.now() }, ...p].sort((a, b) => b.date.localeCompare(a.date))); setForm({ date: "", type: "採血", title: "", memo: "", images: [] }); setAdding(false); };
+
+  const add = () => {
+    if (!form.date) return;
+    setItems(p => [{ ...form, id: Date.now() }, ...p].sort((a, b) => b.date.localeCompare(a.date)));
+    setForm({ date: "", type: "採血", title: "", memo: "", images: [] });
+    setAdding(false);
+  };
+  const startEdit = (item) => { setEditItem(item); setEditForm({ ...item }); setAdding(false); };
+  const saveEdit = () => {
+    setItems(p => p.map(x => x.id === editItem.id ? { ...editForm } : x).sort((a, b) => b.date.localeCompare(a.date)));
+    setEditItem(null);
+  };
+  const deleteItem = (id) => setItems(p => p.filter(x => x.id !== id));
+
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <div><div style={{ fontSize: 18, fontWeight: 700, color: palette.text }}>検査記録</div><div style={{ fontSize: 12, color: palette.textSub }}>採血・画像・検査結果の時系列</div></div>
-        <button style={S.btn(palette.accent2)} onClick={() => setAdding(!adding)}><Icon d={icons.plus} size={14} /> 追加</button>
+        <button style={S.btn(palette.accent2)} onClick={() => { setAdding(!adding); setEditItem(null); }}><Icon d={icons.plus} size={14} /> 追加</button>
       </div>
+
       {adding && (
-        <div style={{ ...S.card, borderColor: palette.accent2 + "60", marginBottom: 16 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-            <div><div style={S.label}>日付 *</div><input type="date" style={S.input} value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} /></div>
-            <div><div style={S.label}>種別</div><select style={S.input} value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}>{["採血","レントゲン","MRI/CT","超音波","心電図","尿検査","その他"].map(t => <option key={t}>{t}</option>)}</select></div>
-          </div>
-          <div style={{ marginBottom: 10 }}><div style={S.label}>タイトル</div><input style={S.input} placeholder="例：一般健康診断" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} /></div>
-          <div style={{ marginBottom: 10 }}><div style={S.label}>結果・メモ</div><textarea style={S.textarea} value={form.memo} onChange={e => setForm(p => ({ ...p, memo: e.target.value }))} /></div>
-          <div style={{ marginBottom: 10 }}>
-            <div style={S.label}>写真（最大4枚）</div>
-            <ImageUpload disabled={form.images.length >= 4} onUpload={img => setForm(p => ({ ...p, images: [...p.images, img] }))} />
-            <ImageGrid images={form.images} onRemove={i => setForm(p => ({ ...p, images: p.images.filter((_, j) => j !== i) }))} />
-          </div>
-          <div style={{ display: "flex", gap: 8 }}><button style={S.btn(palette.accent2)} onClick={add}>保存</button><button style={S.btn(palette.cardBorder)} onClick={() => setAdding(false)}>キャンセル</button></div>
+        <RecordForm form={form} setForm={setForm} onSave={add} onCancel={() => setAdding(false)} saveLabel="保存" />
+      )}
+
+      {editItem && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 12, color: palette.accent2, marginBottom: 6, fontWeight: 700 }}>✏️ 編集中: {editItem.date.replace(/-/g, "/")} {editItem.title}</div>
+          <RecordForm form={editForm} setForm={setEditForm} onSave={saveEdit} onCancel={() => setEditItem(null)} saveLabel="更新" />
         </div>
       )}
-      {items.length === 0 && !adding && <div style={{ textAlign: "center", color: palette.textSub, padding: 40 }}>検査記録がまだありません</div>}
-      {items.map(item => (
-        <div key={item.id} style={S.card}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}><span style={{ color: palette.accent2, fontSize: 12, fontWeight: 700 }}>{item.date.replace(/-/g, "/")}</span><span style={S.tag(palette.accent2)}>{item.type}</span></div>
-              {item.title && <div style={{ fontWeight: 700, color: palette.text, fontSize: 15, marginBottom: 4 }}>{item.title}</div>}
-              {item.memo && <div style={{ color: palette.textSub, fontSize: 13, whiteSpace: "pre-wrap" }}>{item.memo}</div>}
-              {item.images && item.images.length > 0 && <ImageGrid images={item.images} />}
-            </div>
-            <button onClick={() => setItems(p => p.filter(x => x.id !== item.id))} style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent4 }}><Icon d={icons.trash} size={16} /></button>
-          </div>
-        </div>
-      ))}
+
+      <RecordsSlider items={items} onEdit={startEdit} onDelete={deleteItem} />
     </div>
   );
 }
