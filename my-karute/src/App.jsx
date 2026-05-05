@@ -316,7 +316,7 @@ function ImageUpload({ onUpload, label = "写真を追加", disabled = false }) 
 
 // ── ③ 既往歴（1列・タップ展開・編集）──────────────────────────────────────────
 function HistoryPanel({ open, onClose }) {
-  const [items, saveItems, ready] = useKaruteData(KEYS.history, []);
+  const [items, saveItems] = useKaruteData(KEYS.history, []);
   const [form, setForm] = useState({ name: "", year: "", status: "治療中", memo: "" });
   const [adding, setAdding] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
@@ -494,7 +494,7 @@ function RecordsList({ items, onEdit, onDelete }) {
 }
 
 function RecordsPage() {
-  const [items, saveItems, ready] = useKaruteData(KEYS.records, []);
+  const [items, saveItems] = useKaruteData(KEYS.records, []);
   const [adding, setAdding] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState({ date: "", type: "採血", title: "", memo: "", images: [] });
@@ -564,7 +564,7 @@ function OrientalFormBlock({ f, setF, onSave, onCancel, label }) {
 
 // ── 東洋医学（編集対応・複数枚同時選択）──────────────────────────────────────
 function OrientalPage() {
-  const [items, saveItems, ready] = useKaruteData(KEYS.oriental, []);
+  const [items, saveItems] = useKaruteData(KEYS.oriental, []);
   const [adding, setAdding] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ date: "", practitioner: "", tongue: "", pulse: "", symptoms: "", treatment: "", memo: "", images: [] });
@@ -639,7 +639,7 @@ function PostureFormBlock({ f, setF, onSave, onCancel, label }) {
 
 // ── 姿勢記録（編集対応・大きい画像・複数同時選択）──────────────────────────
 function PosturePage() {
-  const [items, saveItems, ready] = useKaruteData(KEYS.posture, []);
+  const [items, saveItems] = useKaruteData(KEYS.posture, []);
   const [adding, setAdding] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ date: "", place: "", memo: "", images: [] });
@@ -712,7 +712,7 @@ function PosturePage() {
 
 // ── お悩みログ ──────────────────────────────────────────────────────────────────
 function WorriesPage() {
-  const [items, saveItems, ready] = useKaruteData(KEYS.worries, []);
+  const [items, saveItems] = useKaruteData(KEYS.worries, []);
   const [text, setText] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [expanded, setExpanded] = useState(null);
@@ -838,7 +838,7 @@ const levelColors = ["#6be0b0", "#a8d8f7", "#f0c060", "#f7a86a", "#e06b8b"];
 
 function PainPage() {
   const def = ["頭痛","腰痛","膝痛","肩こり","首痛"];
-  const [painData, savePainData, ready] = useKaruteData(KEYS.pain, { types: def, logs: [] });
+  const [painData, savePainData] = useKaruteData(KEYS.pain, { types: def, logs: [] });
   const painTypes = painData.types || def;
   const logs = painData.logs || [];
   const setPainTypes = (updater) => {
@@ -971,7 +971,7 @@ function HabitForm({ f, setF, onSave, onCancel, label, cc }) {
 
 // ── 薬・習慣 ────────────────────────────────────────────────────────────────────
 function HabitsPage() {
-  const [items, saveItems, ready] = useKaruteData(KEYS.habits, []);
+  const [items, saveItems] = useKaruteData(KEYS.habits, []);
   const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), category: "薬", name: "", detail: "", memo: "" });
   const [adding, setAdding] = useState(false);
   const [filter, setFilter] = useState("すべて");
@@ -1064,12 +1064,23 @@ const LOG_META = [
 const tlColor = "#f0c060";
 
 function TimelinePage({ jumpDate, onClearJump, onSwitchTab }) {
-  const loadAll = () => { const r = {}; LOG_META.forEach(m => { const d = load(KEYS[m.key]); r[m.key] = m.isPain ? (d && d.logs ? d.logs : []) : (Array.isArray(d) ? d : []); }); return r; };
-  const [allLogs] = useState(loadAll);
+  const [allLogs, setAllLogs] = useState({});
+  const [ready, setReady] = useState(false);
   const [openDate, setOpenDate] = useState(null);
   const [calSel, setCalSel] = useState(null);
   const [calOpen, setCalOpen] = useState(false);
   const dayRefs = useRef({});
+
+  useEffect(() => {
+    Promise.all(LOG_META.map(async m => {
+      const d = await dbGet(KEYS[m.key]);
+      const items = m.isPain ? (d && d.logs ? d.logs : []) : (Array.isArray(d) ? d : []);
+      return [m.key, items];
+    })).then(entries => {
+      setAllLogs(Object.fromEntries(entries));
+      setReady(true);
+    });
+  }, []);
 
   const dateMap = {};
   LOG_META.forEach(m => { (allLogs[m.key] || []).forEach(item => { if (!item.date) return; if (!dateMap[item.date]) dateMap[item.date] = {}; if (!dateMap[item.date][m.key]) dateMap[item.date][m.key] = []; dateMap[item.date][m.key].push(item); }); });
