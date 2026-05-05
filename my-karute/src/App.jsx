@@ -466,31 +466,18 @@ function RecordsPage() {
   );
 }
 
-// ── 東洋医学（編集対応・複数枚同時選択）──────────────────────────────────────
-function OrientalPage() {
-  const [items, setItems] = useState(() => load(KEYS.oriental) || []);
-  const [adding, setAdding] = useState(false);
-  const [editId, setEditId] = useState(null);
-  const [form, setForm] = useState({ date: "", practitioner: "", tongue: "", pulse: "", symptoms: "", treatment: "", memo: "", images: [] });
-  const [editForm, setEditForm] = useState({});
-  const isFirst = useRef(true);
-  useEffect(() => { if (isFirst.current) { isFirst.current = false; return; } save(KEYS.oriental, items); }, [items]);
+// ── 東洋医学フォーム（OrientalPageの外に定義してinputバグを防ぐ）────────────
+const orientalFields = [{ key: "tongue", label: "舌診", ph: "色・形・苔の状態" }, { key: "pulse", label: "脈診", ph: "脈の状態" }, { key: "symptoms", label: "主訴・証", ph: "気血水・五行のバランスなど" }, { key: "treatment", label: "治療内容", ph: "ツボ、施術内容" }, { key: "memo", label: "メモ", ph: "体調変化など" }];
 
-  const fields = [{ key: "tongue", label: "舌診", ph: "色・形・苔の状態" }, { key: "pulse", label: "脈診", ph: "脈の状態" }, { key: "symptoms", label: "主訴・証", ph: "気血水・五行のバランスなど" }, { key: "treatment", label: "治療内容", ph: "ツボ、施術内容" }, { key: "memo", label: "メモ", ph: "体調変化など" }];
+function OrientalFormBlock({ f, setF, onSave, onCancel, label }) {
   const c = palette.accent3;
-  const emptyForm = { date: "", practitioner: "", tongue: "", pulse: "", symptoms: "", treatment: "", memo: "", images: [] };
-
-  const add = () => { if (!form.date) return; setItems(p => [{ ...form, id: Date.now() }, ...p].sort((a, b) => b.date.localeCompare(a.date))); setForm(emptyForm); setAdding(false); };
-  const startEdit = (item) => { setEditId(item.id); setEditForm({ ...item }); setAdding(false); };
-  const saveEdit = () => { setItems(p => p.map(x => x.id === editId ? { ...editForm } : x).sort((a, b) => b.date.localeCompare(a.date))); setEditId(null); };
-
-  const FormBlock = ({ f, setF, onSave, onCancel, label }) => (
+  return (
     <div style={{ ...S.card, borderColor: c + "60", marginBottom: 16 }}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
         <div><div style={S.label}>日付 *</div><input type="date" style={S.input} value={f.date} onChange={e => setF(p => ({ ...p, date: e.target.value }))} /></div>
         <div><div style={S.label}>施術者・病院</div><input style={S.input} placeholder="○○鍼灸院" value={f.practitioner} onChange={e => setF(p => ({ ...p, practitioner: e.target.value }))} /></div>
       </div>
-      {fields.map(fd => <div key={fd.key} style={{ marginBottom: 10 }}><div style={S.label}>{fd.label}</div><textarea style={{ ...S.textarea, minHeight: 50 }} placeholder={fd.ph} value={f[fd.key]} onChange={e => setF(p => ({ ...p, [fd.key]: e.target.value }))} /></div>)}
+      {orientalFields.map(fd => <div key={fd.key} style={{ marginBottom: 10 }}><div style={S.label}>{fd.label}</div><textarea style={{ ...S.textarea, minHeight: 50 }} placeholder={fd.ph} value={f[fd.key] || ""} onChange={e => setF(p => ({ ...p, [fd.key]: e.target.value }))} /></div>)}
       <div style={{ marginBottom: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
           <div style={{ ...S.label, marginBottom: 0 }}>写真（最大4枚・複数同時選択可）</div>
@@ -501,6 +488,28 @@ function OrientalPage() {
       <div style={{ display: "flex", gap: 8 }}><button style={S.btn(c)} onClick={onSave}>{label}</button><button style={S.btn(palette.cardBorder)} onClick={onCancel}>キャンセル</button></div>
     </div>
   );
+}
+
+// ── 東洋医学（編集対応・複数枚同時選択）──────────────────────────────────────
+function OrientalPage() {
+  const [items, setItems] = useState(() => load(KEYS.oriental) || []);
+  const [adding, setAdding] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState({ date: "", practitioner: "", tongue: "", pulse: "", symptoms: "", treatment: "", memo: "", images: [] });
+  const [editForm, setEditForm] = useState({});
+
+  const c = palette.accent3;
+  const emptyForm = { date: "", practitioner: "", tongue: "", pulse: "", symptoms: "", treatment: "", memo: "", images: [] };
+
+  const saveItems = (newItems) => {
+    const ok = save(KEYS.oriental, newItems);
+    if (!ok) { alert("保存容量が不足しています。古い記録を削除するか、画像を減らしてください。"); return; }
+    setItems(newItems);
+  };
+
+  const add = () => { if (!form.date) return; saveItems([{ ...form, id: Date.now() }, ...items].sort((a, b) => b.date.localeCompare(a.date))); setForm(emptyForm); setAdding(false); };
+  const startEdit = (item) => { setEditId(item.id); setEditForm({ ...item }); setAdding(false); };
+  const saveEdit = () => { saveItems(items.map(x => x.id === editId ? { ...editForm } : x).sort((a, b) => b.date.localeCompare(a.date))); setEditId(null); };
 
   return (
     <div>
@@ -508,8 +517,8 @@ function OrientalPage() {
         <div><div style={{ fontSize: 18, fontWeight: 700, color: palette.text }}>東洋医学記録</div><div style={{ fontSize: 12, color: palette.textSub }}>舌診・脈診・治療の時系列</div></div>
         <button style={S.btn(c)} onClick={() => { setAdding(!adding); setEditId(null); }}><Icon d={icons.plus} size={14} /> 追加</button>
       </div>
-      {adding && <FormBlock f={form} setF={setForm} onSave={add} onCancel={() => setAdding(false)} label="保存" />}
-      {editId && <div style={{ marginBottom: 8 }}><div style={{ fontSize: 12, color: c, fontWeight: 700, marginBottom: 4 }}>✏️ 編集中</div><FormBlock f={editForm} setF={setEditForm} onSave={saveEdit} onCancel={() => setEditId(null)} label="更新" /></div>}
+      {adding && <OrientalFormBlock f={form} setF={setForm} onSave={add} onCancel={() => setAdding(false)} label="保存" />}
+      {editId && <div style={{ marginBottom: 8 }}><div style={{ fontSize: 12, color: c, fontWeight: 700, marginBottom: 4 }}>✏️ 編集中</div><OrientalFormBlock f={editForm} setF={setEditForm} onSave={saveEdit} onCancel={() => setEditId(null)} label="更新" /></div>}
       {items.length === 0 && !adding && <div style={{ textAlign: "center", color: palette.textSub, padding: 40 }}>東洋医学の記録がまだありません</div>}
       {items.map(item => (
         <div key={item.id} style={S.card}>
@@ -524,11 +533,40 @@ function OrientalPage() {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <button onClick={() => startEdit(item)} style={{ background: "none", border: `1px solid ${palette.cardBorder}`, borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: palette.textSub }}><Icon d={icons.edit} size={13} /></button>
-              <button onClick={() => setItems(p => p.filter(x => x.id !== item.id))} style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent4 }}><Icon d={icons.trash} size={15} /></button>
+              <button onClick={() => saveItems(items.filter(x => x.id !== item.id))} style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent4 }}><Icon d={icons.trash} size={15} /></button>
             </div>
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ── 姿勢フォーム（PosturePageの外に定義してinputバグを防ぐ）──────────────────
+function PostureFormBlock({ f, setF, onSave, onCancel, label }) {
+  const c = palette.accent4;
+  return (
+    <div style={{ ...S.card, borderColor: c + "60", marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div><div style={S.label}>日付 *</div><input type="date" style={S.input} value={f.date} onChange={e => setF(p => ({ ...p, date: e.target.value }))} /></div>
+        <div><div style={S.label}>場所</div><input style={S.input} placeholder="○○整骨院" value={f.place} onChange={e => setF(p => ({ ...p, place: e.target.value }))} /></div>
+      </div>
+      <div style={{ marginBottom: 10 }}><div style={S.label}>メモ</div><textarea style={{ ...S.textarea, minHeight: 50 }} value={f.memo} onChange={e => setF(p => ({ ...p, memo: e.target.value }))} /></div>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <div style={{ ...S.label, marginBottom: 0 }}>姿勢写真（最大4枚・複数同時選択可）</div>
+          <ImageUpload disabled={f.images.length >= 4} onUpload={img => setF(p => p.images.length < 4 ? { ...p, images: [...p.images, img] } : p)} label="追加" />
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {f.images.map((img, i) => (
+            <div key={i} style={{ position: "relative" }}>
+              <img src={img} alt="" style={{ width: 100, height: 130, objectFit: "cover", borderRadius: 8 }} />
+              <button onClick={() => setF(p => ({ ...p, images: p.images.filter((_, j) => j !== i) }))} style={{ position: "absolute", top: -4, right: -4, background: c, border: "none", borderRadius: "50%", width: 18, height: 18, cursor: "pointer", color: "#fff", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8 }}><button style={S.btn(c)} onClick={onSave}>{label}</button><button style={S.btn(palette.cardBorder)} onClick={onCancel}>キャンセル</button></div>
     </div>
   );
 }
@@ -557,32 +595,6 @@ function PosturePage() {
 
   const recordsWithImages = items.filter(x => x.images && x.images.length > 0);
 
-  const FormBlock = ({ f, setF, onSave, onCancel, label }) => (
-    <div style={{ ...S.card, borderColor: c + "60", marginBottom: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-        <div><div style={S.label}>日付 *</div><input type="date" style={S.input} value={f.date} onChange={e => setF(p => ({ ...p, date: e.target.value }))} /></div>
-        <div><div style={S.label}>場所</div><input style={S.input} placeholder="○○整骨院" value={f.place} onChange={e => setF(p => ({ ...p, place: e.target.value }))} /></div>
-      </div>
-      <div style={{ marginBottom: 10 }}><div style={S.label}>メモ</div><textarea style={{ ...S.textarea, minHeight: 50 }} value={f.memo} onChange={e => setF(p => ({ ...p, memo: e.target.value }))} /></div>
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <div style={{ ...S.label, marginBottom: 0 }}>姿勢写真（最大4枚・複数同時選択可）</div>
-          <ImageUpload disabled={f.images.length >= 4} onUpload={img => setF(p => p.images.length < 4 ? { ...p, images: [...p.images, img] } : p)} label="追加" />
-        </div>
-        {/* 大きい画像プレビュー */}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {f.images.map((img, i) => (
-            <div key={i} style={{ position: "relative" }}>
-              <img src={img} alt="" style={{ width: 100, height: 130, objectFit: "cover", borderRadius: 8 }} />
-              <button onClick={() => setF(p => ({ ...p, images: p.images.filter((_, j) => j !== i) }))} style={{ position: "absolute", top: -4, right: -4, background: c, border: "none", borderRadius: "50%", width: 18, height: 18, cursor: "pointer", color: "#fff", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div style={{ display: "flex", gap: 8 }}><button style={S.btn(c)} onClick={onSave}>{label}</button><button style={S.btn(palette.cardBorder)} onClick={onCancel}>キャンセル</button></div>
-    </div>
-  );
-
   return (
     <div>
       {viewer !== null && (
@@ -598,9 +610,8 @@ function PosturePage() {
         <div><div style={{ fontSize: 18, fontWeight: 700, color: palette.text }}>姿勢記録</div><div style={{ fontSize: 12, color: palette.textSub }}>体操教室・整骨院での姿勢写真</div></div>
         <button style={S.btn(c)} onClick={() => { setAdding(!adding); setEditId(null); }}><Icon d={icons.plus} size={14} /> 追加</button>
       </div>
-      {adding && <FormBlock f={form} setF={setForm} onSave={add} onCancel={() => setAdding(false)} label="保存" />}
-      {editId && <div style={{ marginBottom: 8 }}><div style={{ fontSize: 12, color: c, fontWeight: 700, marginBottom: 4 }}>✏️ 編集中</div><FormBlock f={editForm} setF={setEditForm} onSave={saveEdit} onCancel={() => setEditId(null)} label="更新" /></div>}
-      {items.length === 0 && !adding && <div style={{ textAlign: "center", color: palette.textSub, padding: 40 }}>姿勢記録がまだありません</div>}
+      {adding && <PostureFormBlock f={form} setF={setForm} onSave={add} onCancel={() => setAdding(false)} label="保存" />}
+      {editId && <div style={{ marginBottom: 8 }}><div style={{ fontSize: 12, color: c, fontWeight: 700, marginBottom: 4 }}>✏️ 編集中</div><PostureFormBlock f={editForm} setF={setEditForm} onSave={saveEdit} onCancel={() => setEditId(null)} label="更新" /></div>}
       {items.map(item => {
         const recordsWithImages = items.filter(x => x.images && x.images.length > 0);
         const rwIdx = recordsWithImages.findIndex(r => r.id === item.id);
