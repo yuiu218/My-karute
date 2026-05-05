@@ -322,15 +322,12 @@ function RecordForm({ form, setForm, onSave, onCancel, saveLabel = "保存" }) {
   );
 }
 
-function RecordsSlider({ items, onEdit, onDelete }) {
+function RecordsList({ items, onEdit, onDelete }) {
   const c = palette.accent2;
-  // 上下スライドビューア用: { recordIndex, imgIndex }
   const [viewer, setViewer] = useState(null);
+  const recordsWithImages = items.filter(item => item.images && item.images.length > 0);
 
   if (items.length === 0) return <div style={{ textAlign: "center", color: palette.textSub, padding: 40 }}>検査記録がまだありません</div>;
-
-  // 画像を持つ記録だけ抽出（上下スライド用）
-  const recordsWithImages = items.map((item, idx) => ({ ...item, _origIdx: idx })).filter(item => item.images && item.images.length > 0);
 
   return (
     <>
@@ -344,58 +341,42 @@ function RecordsSlider({ items, onEdit, onDelete }) {
           onRecordChange={setViewer}
         />
       )}
-
-      {/* 横スライドエリア */}
-      <div style={{ overflowX: "auto", display: "flex", gap: 10, paddingBottom: 8, scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}>
-        {items.map((item, itemIdx) => (
-          <div key={item.id} style={{
-            minWidth: "85vw", maxWidth: 340,
-            background: palette.card, border: `1px solid ${palette.cardBorder}`,
-            borderRadius: 12, padding: 12, flexShrink: 0,
-            scrollSnapAlign: "start", display: "flex", flexDirection: "column", gap: 6,
-          }}>
+      {items.map(item => {
+        const rwIdx = recordsWithImages.findIndex(r => r.id === item.id);
+        return (
+          <div key={item.id} style={{ ...S.card, display: "flex", flexDirection: "column", gap: 8 }}>
             {/* ヘッダー行 */}
-            <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "space-between" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                <span style={{ color: c, fontSize: 12, fontWeight: 700 }}>{item.date.replace(/-/g, "/")}</span>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ color: c, fontSize: 13, fontWeight: 700 }}>{item.date.replace(/-/g, "/")}</span>
                 <span style={S.tag(c)}>{item.type}</span>
               </div>
-              <div style={{ display: "flex", gap: 4 }}>
-                <button onClick={() => onEdit(item)} style={{ background: "none", border: `1px solid ${palette.cardBorder}`, borderRadius: 6, padding: "3px 8px", cursor: "pointer", color: palette.textSub, fontSize: 11, display: "flex", alignItems: "center", gap: 3 }}>
-                  <Icon d={icons.edit} size={11} /> 編集
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => onEdit(item)} style={{ background: "none", border: `1px solid ${palette.cardBorder}`, borderRadius: 6, padding: "4px 10px", cursor: "pointer", color: palette.textSub, fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+                  <Icon d={icons.edit} size={12} /> 編集
                 </button>
-                <button onClick={() => onDelete(item.id)} style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent4, padding: 4 }}>
-                  <Icon d={icons.trash} size={14} />
+                <button onClick={() => onDelete(item.id)} style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent4 }}>
+                  <Icon d={icons.trash} size={16} />
                 </button>
               </div>
             </div>
-
-            {/* タイトル */}
-            {item.title && <div style={{ fontWeight: 700, color: palette.text, fontSize: 14 }}>{item.title}</div>}
-
-            {/* 画像（タップでビューア） */}
+            {item.title && <div style={{ fontWeight: 700, color: palette.text, fontSize: 15 }}>{item.title}</div>}
             {item.images && item.images.length > 0 && (
-              <div style={{ overflowX: "auto", display: "flex", gap: 6 }}>
-                {item.images.map((img, i) => {
-                  const rwIdx = recordsWithImages.findIndex(r => r.id === item.id);
-                  return (
-                    <img key={i} src={img} alt=""
-                      onClick={() => setViewer(rwIdx >= 0 ? rwIdx : 0)}
-                      style={{ width: 90, height: 90, objectFit: "cover", borderRadius: 8, flexShrink: 0, cursor: "pointer", border: `1px solid ${palette.cardBorder}` }} />
-                  );
-                })}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {item.images.map((img, i) => (
+                  <img key={i} src={img} alt=""
+                    onClick={() => rwIdx >= 0 && setViewer(rwIdx)}
+                    style={{ width: 90, height: 90, objectFit: "cover", borderRadius: 8, cursor: "pointer", border: `1px solid ${palette.cardBorder}` }} />
+                ))}
               </div>
             )}
-
-            {/* メモ */}
-            {item.memo && <div style={{ color: palette.textSub, fontSize: 12, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{item.memo}</div>}
+            {item.memo && <div style={{ color: palette.textSub, fontSize: 13, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{item.memo}</div>}
           </div>
-        ))}
-      </div>
-
-      {items.length > 1 && (
-        <div style={{ textAlign: "center", color: palette.textSub, fontSize: 11, marginTop: 4 }}>
-          ← スライドして比較 ({items.length}件) ／ 画像タップ→上下で記録間移動
+        );
+      })}
+      {items.length > 1 && recordsWithImages.length > 1 && (
+        <div style={{ textAlign: "center", color: palette.textSub, fontSize: 11, marginBottom: 8 }}>
+          画像タップ → 上下スワイプで記録間を移動できます
         </div>
       )}
     </>
@@ -409,25 +390,26 @@ function RecordsPage() {
   const [form, setForm] = useState({ date: "", type: "採血", title: "", memo: "", images: [] });
   const [editForm, setEditForm] = useState({});
 
-  // ★ バグ修正: itemsが変わったときだけsave（無限ループ防止）
-  const isFirstRender = useRef(true);
-  useEffect(() => {
-    if (isFirstRender.current) { isFirstRender.current = false; return; }
-    save(KEYS.records, items);
-  }, [items]);
+  // ★ シンプルかつ確実な保存：直接呼び出す方式に変更
+  const saveItems = (newItems) => {
+    save(KEYS.records, newItems);
+    setItems(newItems);
+  };
 
   const add = () => {
     if (!form.date) return;
-    setItems(p => [{ ...form, id: Date.now() }, ...p].sort((a, b) => b.date.localeCompare(a.date)));
+    const newItems = [{ ...form, id: Date.now() }, ...items].sort((a, b) => b.date.localeCompare(a.date));
+    saveItems(newItems);
     setForm({ date: "", type: "採血", title: "", memo: "", images: [] });
     setAdding(false);
   };
   const startEdit = (item) => { setEditItem(item); setEditForm({ ...item }); setAdding(false); };
   const saveEdit = () => {
-    setItems(p => p.map(x => x.id === editItem.id ? { ...editForm } : x).sort((a, b) => b.date.localeCompare(a.date)));
+    const newItems = items.map(x => x.id === editItem.id ? { ...editForm } : x).sort((a, b) => b.date.localeCompare(a.date));
+    saveItems(newItems);
     setEditItem(null);
   };
-  const deleteItem = (id) => setItems(p => p.filter(x => x.id !== id));
+  const deleteItem = (id) => saveItems(items.filter(x => x.id !== id));
 
   return (
     <div>
@@ -447,7 +429,7 @@ function RecordsPage() {
         </div>
       )}
 
-      <RecordsSlider items={items} onEdit={startEdit} onDelete={deleteItem} />
+      <RecordsList items={items} onEdit={startEdit} onDelete={deleteItem} />
     </div>
   );
 }
