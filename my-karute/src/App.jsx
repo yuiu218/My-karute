@@ -146,7 +146,7 @@ const icons = {
 const palette = {
   bg: "#0f1117", card: "#1a1d27", cardBorder: "#2a2d3e",
   accent1: "#7c6af7", accent2: "#e06b8b", accent3: "#f7a86a",
-  accent4: "#4ecdc4", accent5: "#6be0b0",
+  accent4: "#4ecdc4", accent5: "#4a90e2",
   text: "#e8eaf0", textSub: "#8890a4", tabBg: "#13151f",
 };
 const hp = { banner: "#221a0a", accent: "#e8a020", accentSub: "#c47c10", border: "#3a2e10", text: "#f5e6c0", textSub: "#a08850" };
