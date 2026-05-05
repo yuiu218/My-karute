@@ -158,7 +158,7 @@ const tabConfig = [
   { key: "posture",  label: "姿勢記録",   color: palette.accent4, icon: icons.posture  },
   { key: "worries",  label: "お悩みログ", color: "#a8d8f7",       icon: icons.edit     },
   { key: "pain",     label: "痛みログ",   color: palette.accent5, icon: icons.pain     },
-  { key: "habits",   label: "薬・習慣",   color: "#c8a8f7",       icon: icons.habits   },
+  { key: "habits",   label: "治療・習慣", color: "#c8a8f7",       icon: icons.habits   },
 ];
 
 const S = {
@@ -972,12 +972,12 @@ function HabitForm({ f, setF, onSave, onCancel, label, cc }) {
 // ── 薬・習慣 ────────────────────────────────────────────────────────────────────
 function HabitsPage() {
   const [items, saveItems] = useKaruteData(KEYS.habits, []);
-  const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), category: "薬", name: "", detail: "", memo: "" });
+  const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), category: "薬・サプリ", name: "", detail: "", memo: "" });
   const [adding, setAdding] = useState(false);
   const [filter, setFilter] = useState("すべて");
   const [editId, setEditId] = useState(null);
   const [editForm, setEditForm] = useState({});
-  const cc = { "薬": palette.accent1, "体操": palette.accent2, "健康習慣": palette.accent3, "サプリ": palette.accent5, "その他": palette.textSub };
+  const cc = { "薬・サプリ": palette.accent1, "食事": palette.accent2, "運動": palette.accent3, "健康習慣": palette.accent5, "マッサージ": palette.accent4, "その他": palette.textSub };
   const add = () => { if (!form.name) return; saveItems([{ ...form, id: Date.now() }, ...items].sort((a, b) => b.date.localeCompare(a.date))); setForm(p => ({ ...p, name: "", detail: "", memo: "" })); setAdding(false); };
   const startEdit = (item) => { setEditId(item.id); setEditForm({ ...item }); setAdding(false); };
   const saveEdit = () => { saveItems(items.map(x => x.id === editId ? { ...editForm } : x).sort((a, b) => b.date.localeCompare(a.date))); setEditId(null); };
@@ -986,7 +986,7 @@ function HabitsPage() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div><div style={{ fontSize: 18, fontWeight: 700, color: palette.text }}>薬・習慣記録</div><div style={{ fontSize: 12, color: palette.textSub }}>薬・体操・健康習慣の管理</div></div>
+        <div><div style={{ fontSize: 18, fontWeight: 700, color: palette.text }}>治療・健康習慣</div><div style={{ fontSize: 12, color: palette.textSub }}>薬・食事・運動・健康習慣の管理</div></div>
         <button style={S.btn("#c8a8f7")} onClick={() => { setAdding(!adding); setEditId(null); }}><Icon d={icons.plus} size={14} /> 追加</button>
       </div>
       {adding && <HabitForm f={form} setF={setForm} onSave={add} onCancel={() => setAdding(false)} label="保存" cc={cc} />}
@@ -1059,7 +1059,7 @@ const LOG_META = [
   { key: "posture",  label: "姿勢記録",   color: palette.accent4, icon: icons.posture  },
   { key: "worries",  label: "お悩みログ", color: "#a8d8f7",       icon: icons.edit     },
   { key: "pain",     label: "痛みログ",   color: palette.accent5, icon: icons.pain,    isPain: true },
-  { key: "habits",   label: "薬・習慣",   color: "#c8a8f7",       icon: icons.habits   },
+  { key: "habits",   label: "治療・習慣", color: "#c8a8f7",       icon: icons.habits   },
 ];
 const tlColor = "#f0c060";
 
