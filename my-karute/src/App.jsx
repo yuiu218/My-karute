@@ -5,7 +5,32 @@ const KEYS = {
   posture: "karute_posture", pain: "karute_pain", worries: "karute_worries", habits: "karute_habits",
 };
 const load = (key) => { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch { return null; } };
-const save = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} };
+const save = (key, val) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(val));
+    return true;
+  } catch (e) {
+    // localStorage容量超過の場合
+    console.error("保存失敗:", e);
+    return false;
+  }
+};
+
+// 画像を圧縮してBase64に変換（最大幅800px・品質0.7）
+const compressImage = (dataUrl) => new Promise((resolve) => {
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement("canvas");
+    const maxW = 800;
+    const scale = img.width > maxW ? maxW / img.width : 1;
+    canvas.width = img.width * scale;
+    canvas.height = img.height * scale;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    resolve(canvas.toDataURL("image/jpeg", 0.7));
+  };
+  img.src = dataUrl;
+});
 
 const Icon = ({ d, size = 18, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -184,14 +209,15 @@ function ImageGrid({ images, onRemove, maxImages = 4 }) {
 
 function ImageUpload({ onUpload, label = "写真を追加", disabled = false }) {
   const ref = useRef();
-  const handleChange = (e) => {
+  const handleChange = async (e) => {
     const files = Array.from(e.target.files);
-    files.forEach(f => {
-      const r = new FileReader();
-      r.onload = ev => onUpload(ev.target.result);
-      r.readAsDataURL(f);
-    });
-    e.target.value = ""; // reset so same file can be re-selected
+    for (const f of files) {
+      const reader = new FileReader();
+      const dataUrl = await new Promise(res => { reader.onload = ev => res(ev.target.result); reader.readAsDataURL(f); });
+      const compressed = await compressImage(dataUrl);
+      onUpload(compressed);
+    }
+    e.target.value = "";
   };
   return (
     <>
@@ -390,10 +416,15 @@ function RecordsPage() {
   const [form, setForm] = useState({ date: "", type: "採血", title: "", memo: "", images: [] });
   const [editForm, setEditForm] = useState({});
 
-  // ★ シンプルかつ確実な保存：直接呼び出す方式に変更
+  // ★ 確実な保存：直接呼び出す方式
   const saveItems = (newItems) => {
-    save(KEYS.records, newItems);
+    const ok = save(KEYS.records, newItems);
+    if (!ok) {
+      alert("保存容量が不足しています。古い記録を削除するか、画像を減らしてください。");
+      return false;
+    }
     setItems(newItems);
+    return true;
   };
 
   const add = () => {
