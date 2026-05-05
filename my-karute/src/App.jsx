@@ -772,6 +772,67 @@ function WorriesPage() {
   );
 }
 
+// ── 痛みログ記録一覧（編集対応）─────────────────────────────────────────────
+function PainLogList({ logs, setLogs, painTypes, colors }) {
+  const [editId, setEditId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  return (
+    <div>
+      {logs.slice(0, 50).map(item => {
+        const ci = painTypes.indexOf(item.type); const c = colors[ci % colors.length] || palette.accent5;
+        const isEditing = editId === item.id;
+        return (
+          <div key={item.id} style={S.card}>
+            {isEditing ? (
+              <div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                  <div><div style={S.label}>日付</div><input type="date" style={S.input} value={editForm.date} onChange={e => setEditForm(p => ({ ...p, date: e.target.value }))} /></div>
+                  <div><div style={S.label}>種類</div><select style={S.input} value={editForm.type} onChange={e => setEditForm(p => ({ ...p, type: e.target.value }))}>{painTypes.map(t => <option key={t}>{t}</option>)}</select></div>
+                </div>
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, color: palette.textSub }}>← 軽い</span>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: levelColors[editForm.level - 1] }}>Lv {editForm.level}</span>
+                    <span style={{ fontSize: 11, color: palette.textSub }}>辛い →</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {[1,2,3,4,5].map(lv => (
+                      <button key={lv} onClick={() => setEditForm(p => ({ ...p, level: lv }))}
+                        style={{ flex: 1, height: 32, borderRadius: 8, border: `2px solid ${editForm.level === lv ? levelColors[lv-1] : "transparent"}`, background: editForm.level >= lv ? levelColors[lv-1] + "50" : palette.cardBorder + "60", cursor: "pointer" }}>
+                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: editForm.level >= lv ? levelColors[lv-1] : "transparent", margin: "0 auto" }} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ marginBottom: 8 }}><input style={S.input} placeholder="メモ" value={editForm.memo || ""} onChange={e => setEditForm(p => ({ ...p, memo: e.target.value }))} /></div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button style={{ ...S.btn(palette.accent5), fontSize: 12, padding: "5px 14px" }} onClick={() => { setLogs(p => p.map(x => x.id === item.id ? { ...editForm } : x).sort((a, b) => b.date.localeCompare(a.date))); setEditId(null); }}>保存</button>
+                  <button style={{ ...S.btn(palette.cardBorder), fontSize: 12, padding: "5px 14px" }} onClick={() => setEditId(null)}>キャンセル</button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <span style={{ color: c, fontSize: 12 }}>{item.date.replace(/-/g, "/")}</span>
+                    <span style={S.tag(c)}>{item.type}</span>
+                    <div style={{ display: "flex", gap: 3 }}>{[1,2,3,4,5].map(lv => <div key={lv} style={{ width: 8, height: 8, borderRadius: "50%", background: item.level >= lv ? levelColors[lv-1] : palette.cardBorder }} />)}</div>
+                  </div>
+                  {item.memo && <div style={{ color: palette.textSub, fontSize: 12, marginTop: 2 }}>{item.memo}</div>}
+                </div>
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button onClick={() => { setEditId(item.id); setEditForm({ ...item }); }} style={{ background: "none", border: `1px solid ${palette.cardBorder}`, borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: palette.textSub }}><Icon d={icons.edit} size={13} /></button>
+                  <button onClick={() => setLogs(p => p.filter(x => x.id !== item.id))} style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent4 }}><Icon d={icons.trash} size={16} /></button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── ④⑤ 痛みログ（種類編集・5段階メモリ）────────────────────────────────────
 const levelColors = ["#6be0b0", "#a8d8f7", "#f0c060", "#f7a86a", "#e06b8b"];
 
@@ -887,22 +948,23 @@ function PainPage() {
       </div>
 
       <div style={{ fontSize: 13, fontWeight: 700, color: palette.text, marginBottom: 8 }}>記録一覧</div>
-      {logs.slice(0, 30).map(item => {
-        const ci = painTypes.indexOf(item.type); const c = colors[ci % colors.length] || palette.accent5;
-        return (
-          <div key={item.id} style={{ ...S.card, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                <span style={{ color: c, fontSize: 12 }}>{item.date.replace(/-/g, "/")}</span>
-                <span style={S.tag(c)}>{item.type}</span>
-                <div style={{ display: "flex", gap: 3 }}>{[1,2,3,4,5].map(lv => <div key={lv} style={{ width: 8, height: 8, borderRadius: "50%", background: item.level >= lv ? levelColors[lv-1] : palette.cardBorder }} />)}</div>
-              </div>
-              {item.memo && <div style={{ color: palette.textSub, fontSize: 12, marginTop: 2 }}>{item.memo}</div>}
-            </div>
-            <button onClick={() => setLogs(p => p.filter(x => x.id !== item.id))} style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent4 }}><Icon d={icons.trash} size={16} /></button>
-          </div>
-        );
-      })}
+      <PainLogList logs={logs} setLogs={setLogs} painTypes={painTypes} colors={colors} />
+    </div>
+  );
+}
+
+// ── 薬・習慣フォーム（HabitsPageの外に定義）──────────────────────────────────
+function HabitForm({ f, setF, onSave, onCancel, label, cc }) {
+  return (
+    <div style={{ ...S.card, borderColor: "#c8a8f760", marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div><div style={S.label}>日付</div><input type="date" style={S.input} value={f.date} onChange={e => setF(p => ({ ...p, date: e.target.value }))} /></div>
+        <div><div style={S.label}>カテゴリ</div><select style={S.input} value={f.category} onChange={e => setF(p => ({ ...p, category: e.target.value }))}>{Object.keys(cc).map(c => <option key={c}>{c}</option>)}</select></div>
+      </div>
+      <div style={{ marginBottom: 10 }}><div style={S.label}>名前 *</div><input style={S.input} placeholder="例：ロキソプロフェン、スクワット" value={f.name} onChange={e => setF(p => ({ ...p, name: e.target.value }))} /></div>
+      <div style={{ marginBottom: 10 }}><div style={S.label}>詳細（用量・頻度など）</div><input style={S.input} placeholder="例：1日3回 食後" value={f.detail || ""} onChange={e => setF(p => ({ ...p, detail: e.target.value }))} /></div>
+      <div style={{ marginBottom: 10 }}><div style={S.label}>メモ</div><textarea style={{ ...S.textarea, minHeight: 60 }} value={f.memo || ""} onChange={e => setF(p => ({ ...p, memo: e.target.value }))} /></div>
+      <div style={{ display: "flex", gap: 8 }}><button style={S.btn("#c8a8f7")} onClick={onSave}>{label}</button><button style={S.btn(palette.cardBorder)} onClick={onCancel}>キャンセル</button></div>
     </div>
   );
 }
@@ -913,28 +975,22 @@ function HabitsPage() {
   const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), category: "薬", name: "", detail: "", memo: "" });
   const [adding, setAdding] = useState(false);
   const [filter, setFilter] = useState("すべて");
+  const [editId, setEditId] = useState(null);
+  const [editForm, setEditForm] = useState({});
   const cc = { "薬": palette.accent1, "体操": palette.accent2, "健康習慣": palette.accent3, "サプリ": palette.accent5, "その他": palette.textSub };
   const add = () => { if (!form.name) return; saveItems([{ ...form, id: Date.now() }, ...items].sort((a, b) => b.date.localeCompare(a.date))); setForm(p => ({ ...p, name: "", detail: "", memo: "" })); setAdding(false); };
+  const startEdit = (item) => { setEditId(item.id); setEditForm({ ...item }); setAdding(false); };
+  const saveEdit = () => { saveItems(items.map(x => x.id === editId ? { ...editForm } : x).sort((a, b) => b.date.localeCompare(a.date))); setEditId(null); };
   const cats = ["すべて", ...Object.keys(cc)];
   const filtered = filter === "すべて" ? items : items.filter(x => x.category === filter);
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div><div style={{ fontSize: 18, fontWeight: 700, color: palette.text }}>薬・習慣記録</div><div style={{ fontSize: 12, color: palette.textSub }}>薬・体操・健康習慣の管理</div></div>
-        <button style={S.btn("#c8a8f7")} onClick={() => setAdding(!adding)}><Icon d={icons.plus} size={14} /> 追加</button>
+        <button style={S.btn("#c8a8f7")} onClick={() => { setAdding(!adding); setEditId(null); }}><Icon d={icons.plus} size={14} /> 追加</button>
       </div>
-      {adding && (
-        <div style={{ ...S.card, borderColor: "#c8a8f760", marginBottom: 16 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-            <div><div style={S.label}>日付</div><input type="date" style={S.input} value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} /></div>
-            <div><div style={S.label}>カテゴリ</div><select style={S.input} value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}>{Object.keys(cc).map(c => <option key={c}>{c}</option>)}</select></div>
-          </div>
-          <div style={{ marginBottom: 10 }}><div style={S.label}>名前 *</div><input style={S.input} placeholder="例：ロキソプロフェン、スクワット" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
-          <div style={{ marginBottom: 10 }}><div style={S.label}>詳細（用量・頻度など）</div><input style={S.input} placeholder="例：1日3回 食後" value={form.detail} onChange={e => setForm(p => ({ ...p, detail: e.target.value }))} /></div>
-          <div style={{ marginBottom: 10 }}><div style={S.label}>メモ</div><textarea style={{ ...S.textarea, minHeight: 60 }} value={form.memo} onChange={e => setForm(p => ({ ...p, memo: e.target.value }))} /></div>
-          <div style={{ display: "flex", gap: 8 }}><button style={S.btn("#c8a8f7")} onClick={add}>保存</button><button style={S.btn(palette.cardBorder)} onClick={() => setAdding(false)}>キャンセル</button></div>
-        </div>
-      )}
+      {adding && <HabitForm f={form} setF={setForm} onSave={add} onCancel={() => setAdding(false)} label="保存" cc={cc} />}
+      {editId && <div style={{ marginBottom: 8 }}><div style={{ fontSize: 12, color: "#c8a8f7", fontWeight: 700, marginBottom: 4 }}>✏️ 編集中</div><HabitForm f={editForm} setF={setEditForm} onSave={saveEdit} onCancel={() => setEditId(null)} label="更新" cc={cc} /></div>}
       <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 16, paddingBottom: 4 }}>
         {cats.map(c => <button key={c} onClick={() => setFilter(c)} style={{ ...S.btn(filter === c ? (cc[c] || palette.accent1) : palette.cardBorder), fontSize: 11, padding: "5px 10px", whiteSpace: "nowrap" }}>{c}</button>)}
       </div>
@@ -948,7 +1004,10 @@ function HabitsPage() {
               {item.detail && <div style={{ color: palette.accent2, fontSize: 12, marginTop: 2 }}>{item.detail}</div>}
               {item.memo && <div style={{ color: palette.textSub, fontSize: 12, marginTop: 4 }}>{item.memo}</div>}
             </div>
-            <button onClick={() => saveItems(items.filter(x => x.id !== item.id))} style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent4 }}><Icon d={icons.trash} size={16} /></button>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <button onClick={() => startEdit(item)} style={{ background: "none", border: `1px solid ${palette.cardBorder}`, borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: palette.textSub }}><Icon d={icons.edit} size={13} /></button>
+              <button onClick={() => saveItems(items.filter(x => x.id !== item.id))} style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent4 }}><Icon d={icons.trash} size={16} /></button>
+            </div>
           </div>
         </div>
       ); })}
