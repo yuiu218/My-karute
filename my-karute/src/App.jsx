@@ -1,37 +1,121 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 
 const KEYS = {
   history: "karute_history", records: "karute_records", oriental: "karute_oriental",
   posture: "karute_posture", pain: "karute_pain", worries: "karute_worries", habits: "karute_habits",
 };
-const load = (key) => { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch { return null; } };
-const save = (key, val) => {
+
+// ─── IndexedDB ────────────────────────────────────────────────────────────────
+const DB_NAME = "MyKaruteDB";
+const DB_VERSION = 1;
+const STORE = "data";
+
+let dbInstance = null;
+
+const getDB = () => new Promise((resolve, reject) => {
+  if (dbInstance) { resolve(dbInstance); return; }
+  const req = indexedDB.open(DB_NAME, DB_VERSION);
+  req.onupgradeneeded = (e) => {
+    const db = e.target.result;
+    if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+  };
+  req.onsuccess = (e) => { dbInstance = e.target.result; resolve(dbInstance); };
+  req.onerror = () => reject(req.error);
+});
+
+const dbGet = async (key) => {
   try {
-    localStorage.setItem(key, JSON.stringify(val));
-    return true;
-  } catch (e) {
-    // localStorage容量超過の場合
-    console.error("保存失敗:", e);
-    return false;
+    const db = await getDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE, "readonly");
+      const req = tx.objectStore(STORE).get(key);
+      req.onsuccess = () => resolve(req.result ?? null);
+      req.onerror = () => resolve(null);
+    });
+  } catch { return null; }
+};
+
+const dbSet = async (key, val) => {
+  try {
+    const db = await getDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE, "readwrite");
+      tx.objectStore(STORE).put(val, key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch { return false; }
+};
+
+// localStorageからIndexedDBへ移行
+const migrateFromLocalStorage = async () => {
+  for (const key of Object.values(KEYS)) {
+    try {
+      const existing = await dbGet(key);
+      if (existing !== null) continue; // すでにDBにある
+      const ls = localStorage.getItem(key);
+      if (ls) {
+        await dbSet(key, JSON.parse(ls));
+        localStorage.removeItem(key);
+      }
+    } catch {}
   }
 };
 
-// 画像を強力に圧縮（最大幅600px・品質0.6）
+// バックアップ用（全データをオブジェクトで返す）
+const exportAllData = async () => {
+  const data = {};
+  for (const [k, v] of Object.entries(KEYS)) {
+    const d = await dbGet(v);
+    if (d !== null) data[k] = d;
+  }
+  return data;
+};
+
+const importAllData = async (data) => {
+  for (const [k, v] of Object.entries(KEYS)) {
+    if (data[k] !== undefined) await dbSet(v, data[k]);
+  }
+};
+
+// 画像を強力に圧縮（最大幅500px・品質0.5）で容量を最小化
 const compressImage = (dataUrl) => new Promise((resolve) => {
   const img = new Image();
   img.onload = () => {
     const canvas = document.createElement("canvas");
-    const maxW = 600;
+    const maxW = 500;
     const scale = img.width > maxW ? maxW / img.width : 1;
     canvas.width = Math.round(img.width * scale);
     canvas.height = Math.round(img.height * scale);
     const ctx = canvas.getContext("2d");
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    resolve(canvas.toDataURL("image/jpeg", 0.6));
+    resolve(canvas.toDataURL("image/jpeg", 0.5));
   };
   img.onerror = () => resolve(dataUrl);
   img.src = dataUrl;
 });
+
+// ─── 各ページ共通のデータ管理フック ──────────────────────────────────────────
+function useKaruteData(key, defaultValue = []) {
+  const [data, setData] = useState(defaultValue);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    dbGet(key).then(v => {
+      if (v !== null) setData(v);
+      setReady(true);
+    });
+  }, [key]);
+
+  const saveData = useCallback(async (newData) => {
+    const ok = await dbSet(key, newData);
+    if (!ok) { alert("保存に失敗しました。"); return false; }
+    setData(newData);
+    return true;
+  }, [key]);
+
+  return [data, saveData, ready];
+}
 
 const Icon = ({ d, size = 18, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -61,8 +145,8 @@ const icons = {
 
 const palette = {
   bg: "#0f1117", card: "#1a1d27", cardBorder: "#2a2d3e",
-  accent1: "#7c6af7", accent2: "#4ecdc4", accent3: "#f7a86a",
-  accent4: "#e06b8b", accent5: "#6be0b0",
+  accent1: "#7c6af7", accent2: "#e06b8b", accent3: "#f7a86a",
+  accent4: "#4ecdc4", accent5: "#6be0b0",
   text: "#e8eaf0", textSub: "#8890a4", tabBg: "#13151f",
 };
 const hp = { banner: "#221a0a", accent: "#e8a020", accentSub: "#c47c10", border: "#3a2e10", text: "#f5e6c0", textSub: "#a08850" };
@@ -232,17 +316,16 @@ function ImageUpload({ onUpload, label = "写真を追加", disabled = false }) 
 
 // ── ③ 既往歴（1列・タップ展開・編集）──────────────────────────────────────────
 function HistoryPanel({ open, onClose }) {
-  const [items, setItems] = useState(() => load(KEYS.history) || []);
+  const [items, saveItems, ready] = useKaruteData(KEYS.history, []);
   const [form, setForm] = useState({ name: "", year: "", status: "治療中", memo: "" });
   const [adding, setAdding] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [editId, setEditId] = useState(null);
   const [editForm, setEditForm] = useState({});
-  useEffect(() => { save(KEYS.history, items); }, [items]);
   const sc = { "治療中": "#e05050", "経過観察": hp.accent, "完治": "#60c080" };
-  const add = () => { if (!form.name) return; setItems(p => [{ ...form, id: Date.now() }, ...p]); setForm({ name: "", year: "", status: "治療中", memo: "" }); setAdding(false); };
+  const add = () => { if (!form.name) return; saveItems([{ ...form, id: Date.now() }, ...items]); setForm({ name: "", year: "", status: "治療中", memo: "" }); setAdding(false); };
   const startEdit = (item) => { setEditId(item.id); setEditForm({ ...item }); setExpandedId(item.id); };
-  const saveEdit = () => { setItems(p => p.map(x => x.id === editId ? { ...editForm } : x)); setEditId(null); };
+  const saveEdit = () => { saveItems(items.map(x => x.id === editId ? { ...editForm } : x)); setEditId(null); };
   const Hi = { ...S.input, background: "#120e04", border: `1px solid ${hp.border}`, color: hp.text };
   const Ht = { ...S.textarea, background: "#120e04", border: `1px solid ${hp.border}`, color: hp.text };
   if (!open) return null;
@@ -303,7 +386,7 @@ function HistoryPanel({ open, onClose }) {
                         {item.memo && <div style={{ color: hp.text, fontSize: 13, lineHeight: 1.6, marginBottom: 8 }}>{item.memo}</div>}
                         <div style={{ display: "flex", gap: 8 }}>
                           <button onClick={() => startEdit(item)} style={{ ...S.btn(hp.border), fontSize: 11, padding: "4px 12px" }}><Icon d={icons.edit} size={12} /> 編集</button>
-                          <button onClick={() => setItems(p => p.filter(x => x.id !== item.id))} style={{ background: "none", border: `1px solid #e0505040`, borderRadius: 8, fontSize: 11, padding: "4px 12px", cursor: "pointer", color: "#e05050", display: "flex", alignItems: "center", gap: 4 }}><Icon d={icons.trash} size={12} /> 削除</button>
+                          <button onClick={() => saveItems(items.filter(x => x.id !== item.id))} style={{ background: "none", border: `1px solid #e0505040`, borderRadius: 8, fontSize: 11, padding: "4px 12px", cursor: "pointer", color: "#e05050", display: "flex", alignItems: "center", gap: 4 }}><Icon d={icons.trash} size={12} /> 削除</button>
                         </div>
                       </div>
                     )}
@@ -411,34 +494,23 @@ function RecordsList({ items, onEdit, onDelete }) {
 }
 
 function RecordsPage() {
-  const [items, setItems] = useState(() => load(KEYS.records) || []);
+  const [items, saveItems, ready] = useKaruteData(KEYS.records, []);
   const [adding, setAdding] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState({ date: "", type: "採血", title: "", memo: "", images: [] });
   const [editForm, setEditForm] = useState({});
 
-  // ★ 確実な保存：直接呼び出す方式
-  const saveItems = (newItems) => {
-    const ok = save(KEYS.records, newItems);
-    if (!ok) {
-      alert("保存容量が不足しています。古い記録を削除するか、画像を減らしてください。");
-      return false;
-    }
-    setItems(newItems);
-    return true;
-  };
-
-  const add = () => {
+  const add = async () => {
     if (!form.date) return;
     const newItems = [{ ...form, id: Date.now() }, ...items].sort((a, b) => b.date.localeCompare(a.date));
-    saveItems(newItems);
+    await saveItems(newItems);
     setForm({ date: "", type: "採血", title: "", memo: "", images: [] });
     setAdding(false);
   };
   const startEdit = (item) => { setEditItem(item); setEditForm({ ...item }); setAdding(false); };
-  const saveEdit = () => {
+  const saveEdit = async () => {
     const newItems = items.map(x => x.id === editItem.id ? { ...editForm } : x).sort((a, b) => b.date.localeCompare(a.date));
-    saveItems(newItems);
+    await saveItems(newItems);
     setEditItem(null);
   };
   const deleteItem = (id) => saveItems(items.filter(x => x.id !== id));
@@ -492,7 +564,7 @@ function OrientalFormBlock({ f, setF, onSave, onCancel, label }) {
 
 // ── 東洋医学（編集対応・複数枚同時選択）──────────────────────────────────────
 function OrientalPage() {
-  const [items, setItems] = useState(() => load(KEYS.oriental) || []);
+  const [items, saveItems, ready] = useKaruteData(KEYS.oriental, []);
   const [adding, setAdding] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ date: "", practitioner: "", tongue: "", pulse: "", symptoms: "", treatment: "", memo: "", images: [] });
@@ -500,12 +572,6 @@ function OrientalPage() {
 
   const c = palette.accent3;
   const emptyForm = { date: "", practitioner: "", tongue: "", pulse: "", symptoms: "", treatment: "", memo: "", images: [] };
-
-  const saveItems = (newItems) => {
-    const ok = save(KEYS.oriental, newItems);
-    if (!ok) { alert("保存容量が不足しています。古い記録を削除するか、画像を減らしてください。"); return; }
-    setItems(newItems);
-  };
 
   const add = () => { if (!form.date) return; saveItems([{ ...form, id: Date.now() }, ...items].sort((a, b) => b.date.localeCompare(a.date))); setForm(emptyForm); setAdding(false); };
   const startEdit = (item) => { setEditId(item.id); setEditForm({ ...item }); setAdding(false); };
@@ -573,7 +639,7 @@ function PostureFormBlock({ f, setF, onSave, onCancel, label }) {
 
 // ── 姿勢記録（編集対応・大きい画像・複数同時選択）──────────────────────────
 function PosturePage() {
-  const [items, setItems] = useState(() => load(KEYS.posture) || []);
+  const [items, saveItems, ready] = useKaruteData(KEYS.posture, []);
   const [adding, setAdding] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ date: "", place: "", memo: "", images: [] });
@@ -582,12 +648,6 @@ function PosturePage() {
 
   const c = palette.accent4;
   const emptyForm = { date: "", place: "", memo: "", images: [] };
-
-  const saveItems = (newItems) => {
-    const ok = save(KEYS.posture, newItems);
-    if (!ok) { alert("保存容量が不足しています。古い記録を削除するか、画像を減らしてください。"); return; }
-    setItems(newItems);
-  };
 
   const add = () => { if (!form.date) return; saveItems([{ ...form, id: Date.now() }, ...items].sort((a, b) => b.date.localeCompare(a.date))); setForm(emptyForm); setAdding(false); };
   const startEdit = (item) => { setEditId(item.id); setEditForm({ ...item }); setAdding(false); };
@@ -652,16 +712,15 @@ function PosturePage() {
 
 // ── お悩みログ ──────────────────────────────────────────────────────────────────
 function WorriesPage() {
-  const [items, setItems] = useState(() => load(KEYS.worries) || []);
+  const [items, saveItems, ready] = useKaruteData(KEYS.worries, []);
   const [text, setText] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [expanded, setExpanded] = useState(null);
   const [editId, setEditId] = useState(null);
   const [editText, setEditText] = useState("");
   const wc = "#a8d8f7";
-  useEffect(() => { save(KEYS.worries, items); }, [items]);
-  const add = () => { if (!text.trim()) return; setItems(p => [{ id: Date.now(), date, text: text.trim() }, ...p].sort((a, b) => b.date.localeCompare(a.date))); setText(""); };
-  const saveEdit = id => { setItems(p => p.map(x => x.id === id ? { ...x, text: editText } : x)); setEditId(null); };
+  const add = () => { if (!text.trim()) return; saveItems([{ id: Date.now(), date, text: text.trim() }, ...items].sort((a, b) => b.date.localeCompare(a.date))); setText(""); };
+  const saveEdit = id => { saveItems(items.map(x => x.id === id ? { ...x, text: editText } : x)); setEditId(null); };
   const grouped = {};
   items.forEach(item => { const ym = item.date.slice(0, 7); if (!grouped[ym]) grouped[ym] = []; grouped[ym].push(item); });
   const sortedYM = Object.keys(grouped).sort().reverse();
@@ -689,7 +748,7 @@ function WorriesPage() {
                   <span style={{ fontSize: 11, color: wc, fontWeight: 700 }}>{item.date.replace(/-/g, "/")}</span>
                   <div style={{ display: "flex", gap: 6 }}>
                     <button onClick={e => { e.stopPropagation(); setEditId(item.id); setEditText(item.text); setExpanded(item.id); }} style={{ background: "none", border: "none", cursor: "pointer", color: palette.textSub, padding: 2 }}><Icon d={icons.edit} size={14} /></button>
-                    <button onClick={e => { e.stopPropagation(); setItems(p => p.filter(x => x.id !== item.id)); }} style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent4 + "90", padding: 2 }}><Icon d={icons.trash} size={14} /></button>
+                    <button onClick={e => { e.stopPropagation(); saveItems(items.filter(x => x.id !== item.id)); }} style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent4 + "90", padding: 2 }}><Icon d={icons.trash} size={14} /></button>
                   </div>
                 </div>
                 {editId === item.id ? (
@@ -718,16 +777,23 @@ const levelColors = ["#6be0b0", "#a8d8f7", "#f0c060", "#f7a86a", "#e06b8b"];
 
 function PainPage() {
   const def = ["頭痛","腰痛","膝痛","肩こり","首痛"];
-  const stored = load(KEYS.pain);
-  const [painTypes, setPainTypes] = useState(() => stored && stored.types ? stored.types : def);
-  const [logs, setLogs] = useState(() => stored && stored.logs ? stored.logs : []);
+  const [painData, savePainData, ready] = useKaruteData(KEYS.pain, { types: def, logs: [] });
+  const painTypes = painData.types || def;
+  const logs = painData.logs || [];
+  const setPainTypes = (updater) => {
+    const newTypes = typeof updater === "function" ? updater(painTypes) : updater;
+    savePainData({ types: newTypes, logs });
+  };
+  const setLogs = (updater) => {
+    const newLogs = typeof updater === "function" ? updater(logs) : updater;
+    savePainData({ types: painTypes, logs: newLogs });
+  };
   const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), type: "", level: 3, memo: "" });
   const [view, setView] = useState("week");
   const [newType, setNewType] = useState("");
   const [editingTypes, setEditingTypes] = useState(false);
 
   useEffect(() => { if (!form.type && painTypes.length > 0) setForm(p => ({ ...p, type: painTypes[0] })); }, [painTypes]);
-  useEffect(() => { save(KEYS.pain, { types: painTypes, logs }); }, [painTypes, logs]);
 
   const add = () => { if (!form.type) return; setLogs(p => [{ ...form, id: Date.now() }, ...p].sort((a, b) => b.date.localeCompare(a.date))); setForm(p => ({ ...p, memo: "" })); };
   const addType = () => { if (!newType.trim() || painTypes.includes(newType.trim())) return; setPainTypes(p => [...p, newType.trim()]); setNewType(""); };
@@ -843,13 +909,12 @@ function PainPage() {
 
 // ── 薬・習慣 ────────────────────────────────────────────────────────────────────
 function HabitsPage() {
-  const [items, setItems] = useState(() => load(KEYS.habits) || []);
+  const [items, saveItems, ready] = useKaruteData(KEYS.habits, []);
   const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), category: "薬", name: "", detail: "", memo: "" });
   const [adding, setAdding] = useState(false);
   const [filter, setFilter] = useState("すべて");
-  useEffect(() => { save(KEYS.habits, items); }, [items]);
   const cc = { "薬": palette.accent1, "体操": palette.accent2, "健康習慣": palette.accent3, "サプリ": palette.accent5, "その他": palette.textSub };
-  const add = () => { if (!form.name) return; setItems(p => [{ ...form, id: Date.now() }, ...p].sort((a, b) => b.date.localeCompare(a.date))); setForm(p => ({ ...p, name: "", detail: "", memo: "" })); setAdding(false); };
+  const add = () => { if (!form.name) return; saveItems([{ ...form, id: Date.now() }, ...items].sort((a, b) => b.date.localeCompare(a.date))); setForm(p => ({ ...p, name: "", detail: "", memo: "" })); setAdding(false); };
   const cats = ["すべて", ...Object.keys(cc)];
   const filtered = filter === "すべて" ? items : items.filter(x => x.category === filter);
   return (
@@ -883,7 +948,7 @@ function HabitsPage() {
               {item.detail && <div style={{ color: palette.accent2, fontSize: 12, marginTop: 2 }}>{item.detail}</div>}
               {item.memo && <div style={{ color: palette.textSub, fontSize: 12, marginTop: 4 }}>{item.memo}</div>}
             </div>
-            <button onClick={() => setItems(p => p.filter(x => x.id !== item.id))} style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent4 }}><Icon d={icons.trash} size={16} /></button>
+            <button onClick={() => saveItems(items.filter(x => x.id !== item.id))} style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent4 }}><Icon d={icons.trash} size={16} /></button>
           </div>
         </div>
       ); })}
@@ -1046,12 +1111,8 @@ function BackupPanel({ open, onClose }) {
   const [msg, setMsg] = useState("");
   const fileRef = useRef();
 
-  const backup = () => {
-    const data = {};
-    Object.entries(KEYS).forEach(([k, v]) => {
-      const raw = localStorage.getItem(v);
-      if (raw) data[k] = JSON.parse(raw);
-    });
+  const backup = async () => {
+    const data = await exportAllData();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1066,12 +1127,10 @@ function BackupPanel({ open, onClose }) {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const data = JSON.parse(ev.target.result);
-        Object.entries(KEYS).forEach(([k, v]) => {
-          if (data[k] !== undefined) localStorage.setItem(v, JSON.stringify(data[k]));
-        });
+        await importAllData(data);
         setMsg("✅ 復元しました。ページをリロードしてください。");
         setTimeout(() => window.location.reload(), 1500);
       } catch {
@@ -1120,10 +1179,21 @@ export default function App() {
   const [jumpDate, setJumpDate] = useState(null);
   const [allMarkedDates, setAllMarkedDates] = useState(new Set());
 
+  // localStorageからIndexedDBへの移行（初回のみ）
+  useEffect(() => { migrateFromLocalStorage(); }, []);
+
+  // カレンダー用マーク日付を更新
   useEffect(() => {
-    const dates = new Set();
-    LOG_META.forEach(m => { const d = load(KEYS[m.key]); const items = m.isPain ? (d && d.logs ? d.logs : []) : (Array.isArray(d) ? d : []); items.forEach(x => x.date && dates.add(x.date)); });
-    setAllMarkedDates(dates);
+    const updateDates = async () => {
+      const dates = new Set();
+      for (const m of LOG_META) {
+        const d = await dbGet(KEYS[m.key]);
+        const items = m.isPain ? (d && d.logs ? d.logs : []) : (Array.isArray(d) ? d : []);
+        items.forEach(x => x.date && dates.add(x.date));
+      }
+      setAllMarkedDates(dates);
+    };
+    updateDates();
   }, [active]);
 
   const activeTab = tabConfig.find(t => t.key === active);
