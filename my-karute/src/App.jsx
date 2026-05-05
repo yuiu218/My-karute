@@ -16,19 +16,20 @@ const save = (key, val) => {
   }
 };
 
-// 画像を圧縮してBase64に変換（最大幅800px・品質0.7）
+// 画像を強力に圧縮（最大幅600px・品質0.6）
 const compressImage = (dataUrl) => new Promise((resolve) => {
   const img = new Image();
   img.onload = () => {
     const canvas = document.createElement("canvas");
-    const maxW = 800;
+    const maxW = 600;
     const scale = img.width > maxW ? maxW / img.width : 1;
-    canvas.width = img.width * scale;
-    canvas.height = img.height * scale;
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
     const ctx = canvas.getContext("2d");
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    resolve(canvas.toDataURL("image/jpeg", 0.7));
+    resolve(canvas.toDataURL("image/jpeg", 0.6));
   };
+  img.onerror = () => resolve(dataUrl);
   img.src = dataUrl;
 });
 
@@ -539,15 +540,20 @@ function PosturePage() {
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ date: "", place: "", memo: "", images: [] });
   const [editForm, setEditForm] = useState({});
-  const [viewer, setViewer] = useState(null); // { recIdx, imgIdx }
-  const isFirst = useRef(true);
-  useEffect(() => { if (isFirst.current) { isFirst.current = false; return; } save(KEYS.posture, items); }, [items]);
+  const [viewer, setViewer] = useState(null);
 
   const c = palette.accent4;
   const emptyForm = { date: "", place: "", memo: "", images: [] };
-  const add = () => { if (!form.date) return; setItems(p => [{ ...form, id: Date.now() }, ...p].sort((a, b) => b.date.localeCompare(a.date))); setForm(emptyForm); setAdding(false); };
+
+  const saveItems = (newItems) => {
+    const ok = save(KEYS.posture, newItems);
+    if (!ok) { alert("保存容量が不足しています。古い記録を削除するか、画像を減らしてください。"); return; }
+    setItems(newItems);
+  };
+
+  const add = () => { if (!form.date) return; saveItems([{ ...form, id: Date.now() }, ...items].sort((a, b) => b.date.localeCompare(a.date))); setForm(emptyForm); setAdding(false); };
   const startEdit = (item) => { setEditId(item.id); setEditForm({ ...item }); setAdding(false); };
-  const saveEdit = () => { setItems(p => p.map(x => x.id === editId ? { ...editForm } : x).sort((a, b) => b.date.localeCompare(a.date))); setEditId(null); };
+  const saveEdit = () => { saveItems(items.map(x => x.id === editId ? { ...editForm } : x).sort((a, b) => b.date.localeCompare(a.date))); setEditId(null); };
 
   const recordsWithImages = items.filter(x => x.images && x.images.length > 0);
 
@@ -596,6 +602,7 @@ function PosturePage() {
       {editId && <div style={{ marginBottom: 8 }}><div style={{ fontSize: 12, color: c, fontWeight: 700, marginBottom: 4 }}>✏️ 編集中</div><FormBlock f={editForm} setF={setEditForm} onSave={saveEdit} onCancel={() => setEditId(null)} label="更新" /></div>}
       {items.length === 0 && !adding && <div style={{ textAlign: "center", color: palette.textSub, padding: 40 }}>姿勢記録がまだありません</div>}
       {items.map(item => {
+        const recordsWithImages = items.filter(x => x.images && x.images.length > 0);
         const rwIdx = recordsWithImages.findIndex(r => r.id === item.id);
         return (
           <div key={item.id} style={S.card}>
@@ -609,18 +616,21 @@ function PosturePage() {
               </div>
               <div style={{ display: "flex", gap: 4 }}>
                 <button onClick={() => startEdit(item)} style={{ background: "none", border: `1px solid ${palette.cardBorder}`, borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: palette.textSub }}><Icon d={icons.edit} size={13} /></button>
-                <button onClick={() => setItems(p => p.filter(x => x.id !== item.id))} style={{ background: "none", border: "none", cursor: "pointer", color: c }}><Icon d={icons.trash} size={15} /></button>
+                <button onClick={() => saveItems(items.filter(x => x.id !== item.id))} style={{ background: "none", border: "none", cursor: "pointer", color: c }}><Icon d={icons.trash} size={15} /></button>
               </div>
             </div>
-            {/* 大きい画像表示 */}
+            {/* 横スワイプで画像移動 */}
             {item.images && item.images.length > 0 && (
-              <div style={{ display: "flex", gap: 8, overflowX: "auto" }}>
+              <div style={{ overflowX: "auto", display: "flex", gap: 8, scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch", paddingBottom: 4 }}>
                 {item.images.map((img, i) => (
                   <img key={i} src={img} alt=""
                     onClick={() => rwIdx >= 0 && setViewer(rwIdx)}
-                    style={{ width: 110, height: 140, objectFit: "cover", borderRadius: 8, flexShrink: 0, cursor: "pointer", border: `1px solid ${palette.cardBorder}` }} />
+                    style={{ width: 140, height: 180, objectFit: "cover", borderRadius: 8, flexShrink: 0, scrollSnapAlign: "start", cursor: "pointer", border: `1px solid ${palette.cardBorder}` }} />
                 ))}
               </div>
+            )}
+            {item.images && item.images.length > 1 && (
+              <div style={{ fontSize: 10, color: palette.textSub, textAlign: "center", marginTop: 2 }}>← スワイプで移動 ({item.images.length}枚)</div>
             )}
           </div>
         );
