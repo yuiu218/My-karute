@@ -837,7 +837,7 @@ function PainLogList({ logs, setLogs, painTypes, colors }) {
 const levelColors = ["#6be0b0", "#a8d8f7", "#f0c060", "#f7a86a", "#e06b8b"];
 
 function PainPage() {
-  const def = ["頭痛","腰痛","膝痛","肩こり","首痛"];
+  const def = ["頭痛","首痛","肩こり","腹痛","腰痛","膝痛"];
   const [painData, savePainData] = useKaruteData(KEYS.pain, { types: def, logs: [] });
   const painTypes = painData.types || def;
   const logs = painData.logs || [];
@@ -865,7 +865,7 @@ function PainPage() {
 
   const getWeekStart = d => { const dt = new Date(d); dt.setDate(dt.getDate() - dt.getDay()); return dt.toISOString().slice(0, 10); };
   const buckets = {};
-  logs.forEach(log => { const key = view === "week" ? getWeekStart(log.date) : view === "month" ? log.date.slice(0, 7) : log.date.slice(0, 4); if (!buckets[key]) buckets[key] = {}; buckets[key][log.type] = (buckets[key][log.type] || 0) + 1; });
+  logs.forEach(log => { const key = view === "week" ? getWeekStart(log.date) : view === "month" ? log.date.slice(0, 7) : log.date.slice(0, 4); if (!buckets[key]) buckets[key] = {}; buckets[key][log.type] = (buckets[key][log.type] || 0) + (log.level || 1); });
   const sortedKeys = Object.keys(buckets).sort().reverse().slice(0, 12).reverse();
   const maxVal = Math.max(1, ...sortedKeys.flatMap(k => Object.values(buckets[k])));
   const colors = [palette.accent5, palette.accent4, palette.accent3, palette.accent2, palette.accent1, "#c8a8f7"];
@@ -928,7 +928,7 @@ function PainPage() {
 
       <div style={{ ...S.card, marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: palette.text }}>集計グラフ</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: palette.text }}>集計グラフ <span style={{ fontSize: 10, color: palette.textSub, fontWeight: 400 }}>（Lv1=1pt〜Lv5=5pt）</span></div>
           <div style={{ display: "flex", gap: 4 }}>{["week","month","year"].map((v,i) => <button key={v} onClick={() => setView(v)} style={{ ...S.btn(view === v ? palette.accent5 : palette.cardBorder), fontSize: 11, padding: "4px 10px" }}>{["週","月","年"][i]}</button>)}</div>
         </div>
         {sortedKeys.length === 0 ? <div style={{ textAlign: "center", color: palette.textSub, padding: 20 }}>データがありません</div> : (
